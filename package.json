@@ -8,7 +8,6 @@
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "postinstall": "electron-builder install-app-deps",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive:true,force:true})\"",
     "package": "npm run clean && npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win && node -e \"require('fs').renameSync('release/win-unpacked', 'release/Biasno')\"",
     "package:installer": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",

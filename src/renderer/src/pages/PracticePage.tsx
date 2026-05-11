@@ -18,7 +18,80 @@ import { getActiveHands, requiresMelody, requiresRhythm } from '../utils/midiUti
 const TIMING_WINDOW_MS  = 220
 const KEYBOARD_HEIGHT   = 200
 const REWIND_AMOUNT     = 5
-const LOOKAHEAD_REAL_MS = 100
+
+// Vietnamese label for the mode-switch flash overlay
+const MODE_LABELS: Record<PracticeMode, string> = {
+  'view-listen':           '👁️  Xem và nghe',
+  'left-melody':           '🫲  Tay trái — Melody',
+  'right-melody':          '🫱  Tay phải — Melody',
+  'both-melody':           '🙌  Cả 2 tay — Melody',
+  'left-rhythm':           '🫲  Tay trái — Rhythm',
+  'right-rhythm':          '🫱  Tay phải — Rhythm',
+  'both-rhythm':           '🙌  Cả 2 tay — Rhythm',
+  'left-melody-rhythm':    '🫲  Tay trái — Melody + Rhythm',
+  'right-melody-rhythm':   '🫱  Tay phải — Melody + Rhythm',
+  'both-melody-rhythm':    '🙌  Cả 2 tay — Melody + Rhythm',
+}
+
+// View-swap animation between SheetMusic ↔ FallingNotes.
+//
+// Two stages, layered on top of each other:
+//   • SHELL  — the outer container slides + fades (the "page" arriving)
+//   • INNER  — the content (notes / staff) fades in slightly AFTER the
+//              shell has finished sliding, giving a "stage curtain → reveal"
+//              feel rather than a flat fade.
+//
+// Leave: content fades out first (~120 ms), then shell slides out to the left.
+// Enter: shell slides in from the right, then content fades in once it has
+//        settled (delay matches shell's fade-in mid-point).
+//
+// No `transform: scale(...)` on the shell — scale changes the visual size
+// reported by getBoundingClientRect, which can lock the FallingNotes canvas
+// at sub-full-size if the canvas was first sized mid-animation.  Pure
+// translate avoids that class of bug.
+const MODE_FLASH_STYLE = `
+@keyframes modeFlash {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.92); }
+  20%  { opacity: 1; transform: translateY(0)   scale(1);    }
+  75%  { opacity: 1; transform: translateY(0)   scale(1);    }
+  100% { opacity: 0; transform: translateY(-4px) scale(0.96); }
+}
+
+/* SHELL — the surrounding page slides + fades. */
+@keyframes shellLeave {
+  0%   { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(-7%); }
+}
+@keyframes shellEnter {
+  0%   { opacity: 0; transform: translateX(7%); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* CONTENT — the notes/staff inside fade out first / fade in last.
+   Intentionally NO filter blur here: a blurred filter forces the browser to
+   rasterize the whole content area on every animation frame, which on slower
+   GPUs caused occasional toggle stutters.  Pure opacity + translate is
+   composited cheaply. */
+@keyframes contentLeave {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes contentEnter {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.shell-leaving  { animation: shellLeave   220ms cubic-bezier(0.4, 0, 1, 1) both; }
+.shell-entering { animation: shellEnter   260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Inner content fade — independent timing so leave starts before the shell
+   moves, and enter starts after the shell has settled. */
+.content-leaving  { animation: contentLeave 140ms 0ms   cubic-bezier(0.4, 0, 1, 1) both; }
+.content-entering { animation: contentEnter 320ms 140ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+`
+// 300 ms is enough headroom for normal JS jitter; OSMD's render block is no
+// longer a concern here because the sheet is pre-rendered on the home page.
+const LOOKAHEAD_REAL_MS = 300
 const NOTE_LOOK_AHEAD_S = 4.5   // must match FallingNotes PX_PER_SECOND / visible window
 const LOOP_RESET_AFTER  = 0.3   // seconds past song end before seamless reset
 
@@ -39,7 +112,7 @@ function findBestResumeTime(notes: MidiNote[], t: number): number {
 
 export default function PracticePage(): React.JSX.Element {
   const navigate = useNavigate()
-  const { practiceSettings, resumePoint, setResumePoint } = useAppContext()
+  const { practiceSettings, resumePoint, setResumePoint, modePrefs, setModePrefs } = useAppContext()
   useAudioEngine()
 
   const midiFile = practiceSettings?.midiFile ?? null
@@ -71,7 +144,7 @@ export default function PracticePage(): React.JSX.Element {
   })
 
   const [activeKeys, setActiveKeys] = useState<
-    Map<number, { hand: Hand; hitState?: 'correct' | 'wrong' }>
+    Map<number, { hand: Hand; hitState?: 'correct' | 'wrong'; time?: number }>
   >(() => new Map())
 
   // Refs for RAF / interval closures
@@ -352,14 +425,21 @@ export default function PracticePage(): React.JSX.Element {
       // View-listen: derive active keys from current song time (RAF-based, seek-safe)
       if (isViewMode) {
         const notes = visibleNotesRef.current
-        const activeMap = new Map<number, { hand: Hand }>()
+        const activeMap = new Map<number, { hand: Hand; time: number }>()
         for (const note of notes) {
           if (note.time <= now && note.time + note.duration > now) {
-            activeMap.set(note.midi, { hand: note.hand })
+            // For same MIDI in a chord keep the most-recent start time
+            const existing = activeMap.get(note.midi)
+            if (!existing || note.time > existing.time) {
+              activeMap.set(note.midi, { hand: note.hand, time: note.time })
+            }
           }
         }
-        // Only update React state when the set actually changes
-        const key = [...activeMap.keys()].sort().join(',')
+        // Key includes note.time so that same-pitch repeated notes (E4→E4)
+        // trigger a state update even though the MIDI number hasn't changed.
+        const key = [...activeMap.entries()]
+          .map(([m, v]) => `${m}@${Math.round(v.time * 1000)}`)
+          .sort().join(',')
         if (key !== viewActiveRef.current) {
           viewActiveRef.current = key
           setActiveKeys(activeMap)
@@ -687,6 +767,12 @@ export default function PracticePage(): React.JSX.Element {
     })
   }, [])
 
+  // ─── Mode-switch transition state ─────────────────────────────────────────
+  // Tracks the 200 ms fade-out → mode swap → fade-in animation that runs
+  // when the user picks a different practice mode from the header.
+  const [modeTransitioning, setModeTransitioning] = useState(false)
+  const [modeFlash, setModeFlash]                 = useState<PracticeMode | null>(null)
+
   // ─── Mode switch mid-session ─────────────────────────────────────────────
   const handleModeChange = useCallback((newMode: PracticeMode) => {
     if (newMode === mode) return
@@ -731,6 +817,21 @@ export default function PracticePage(): React.JSX.Element {
     // Commit new mode — isViewMode, activeHands, scheduleAudio all update via re-render
     setMode(newMode)
 
+    // Restore toggle state for this mode if it has been touched before, else
+    // fall back to defaults.  Matches the home-page → practice rule: each mode
+    // has its own UI prefs; you don't carry over toggles from another mode.
+    const np = modePrefs[newMode]
+    setShowSheetMusic(np?.showSheetMusic ?? false)
+    setShowFallingNotes(np?.showFallingNotes ?? true)
+
+    // ── Animation: fade-out → swap → fade-in + brief mode label flash ────────
+    setModeTransitioning(true)
+    setModeFlash(newMode)
+    // Let the fade-in finish then drop the transition flag
+    setTimeout(() => setModeTransitioning(false), 260)
+    // Mode-label flash stays a bit longer for emphasis
+    setTimeout(() => setModeFlash(null), 1100)
+
     // If was playing, resume after React re-renders with new mode's scheduleAudio
     if (wasPlaying) {
       audioEngine.restoreVolume()
@@ -740,7 +841,7 @@ export default function PracticePage(): React.JSX.Element {
       // Also kick off immediately so there's no 25ms gap.
       setTimeout(() => { if (isPlayingRef.current) requestAnimationFrame(scheduleAudio) }, 0)
     }
-  }, [mode, midiFile, scheduleAudio])
+  }, [mode, midiFile, scheduleAudio, modePrefs])
 
   // ─── Volume / Zoom / Measure lines ───────────────────────────────────────
   const [volume, setVolume]           = useState(() => audioEngine.getVolume())
@@ -766,13 +867,66 @@ export default function PracticePage(): React.JSX.Element {
     })
   }, [])
 
-  const [showSheetMusic,   setShowSheetMusic]   = useState(false)
-  const [showFallingNotes, setShowFallingNotes] = useState(true)
+  // Per-mode UI toggles.  The state is restored from AppContext.modePrefs[mode]
+  // when the same mode is re-entered (from "Tiếp tục" or re-selecting that
+  // mode on the mode page) — and falls back to defaults for a different mode.
+  // This is per-session only; it does not persist across app restarts.
+  const initialPrefs = practiceSettings ? modePrefs[practiceSettings.mode] : undefined
+  const [showSheetMusic, setShowSheetMusic] = useState(
+    () => initialPrefs?.showSheetMusic ?? false
+  )
+  const [showFallingNotes, setShowFallingNotes] = useState(
+    () => initialPrefs?.showFallingNotes ?? true
+  )
 
-  const handleZoomChange          = useCallback((val: number) => setZoom(val), [])
-  const handleMeasureLinesToggle  = useCallback(() => setMeasureLines(v => !v), [])
-  const handleSheetMusicToggle    = useCallback(() => setShowSheetMusic(v => !v), [])
-  const handleFallingNotesToggle  = useCallback(() => setShowFallingNotes(v => !v), [])
+  // View-swap animation between SheetMusic ↔ FallingNotes.
+  //   idle      → no animation, content visible normally
+  //   leaving   → current view runs the exit keyframes
+  //   entering  → next view runs the enter keyframes (after swap)
+  type SwapPhase = 'idle' | 'leaving' | 'entering'
+  const [swapPhase, setSwapPhase] = useState<SwapPhase>('idle')
+  const pendingSwapRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (swapPhase === 'leaving') {
+      // Match the longest "leaving" animation in MODE_FLASH_STYLE (shellLeave 220 ms).
+      const t = setTimeout(() => {
+        // Run the queued mutation (toggle showSheetMusic), then switch the
+        // animation class so the new view animates in.
+        pendingSwapRef.current?.()
+        pendingSwapRef.current = null
+        setSwapPhase('entering')
+      }, 220)
+      return () => clearTimeout(t)
+    }
+    if (swapPhase === 'entering') {
+      // Match the longest "entering" animation (contentEnter 140 ms delay + 320 ms duration).
+      const t = setTimeout(() => setSwapPhase('idle'), 460)
+      return () => clearTimeout(t)
+    }
+    return
+  }, [swapPhase])
+
+  const handleZoomChange         = useCallback((val: number) => setZoom(val), [])
+  const handleMeasureLinesToggle = useCallback(() => setMeasureLines(v => !v), [])
+  const handleSheetMusicToggle   = useCallback(() => {
+    if (swapPhase !== 'idle') return  // ignore rapid re-toggle while animating
+    pendingSwapRef.current = () => {
+      setShowSheetMusic((v) => {
+        const next = !v
+        setModePrefs(mode, { showSheetMusic: next })
+        return next
+      })
+    }
+    setSwapPhase('leaving')
+  }, [swapPhase, mode, setModePrefs])
+  const handleFallingNotesToggle = useCallback(() => {
+    setShowFallingNotes(v => {
+      const next = !v
+      setModePrefs(mode, { showFallingNotes: next })
+      return next
+    })
+  }, [mode, setModePrefs])
 
   const handleBack = useCallback(() => {
     setResumePoint({ time: currentTimeRef.current, mode })
@@ -798,6 +952,7 @@ export default function PracticePage(): React.JSX.Element {
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
+      <style>{MODE_FLASH_STYLE}</style>
       <PracticeHeader
         songName={midiFile.name}
         isPlaying={isPlaying}
@@ -840,26 +995,67 @@ export default function PracticePage(): React.JSX.Element {
 
       {/* Main content area: sheet music OR falling notes, plus countdown overlay */}
       <div className="relative flex-1 min-h-0 flex flex-col">
-        {showSheetMusic ? (
-          <SheetMusic
-            notes={midiFile.notes}
-            bpm={midiFile.bpm}
-            timeSignature={midiFile.timeSignature}
-            currentTime={currentTime}
-            activeHands={activeHands}
-            highlightMode={showFallingNotes}
-          />
-        ) : (
-          showFallingNotes && (
-            <FallingNotes
-              notes={renderNotes}
-              currentTime={currentTime}
-              keyboardHeight={KEYBOARD_HEIGHT}
-              practiceMode={!isViewMode}
-              zoom={zoom}
-              showLaneLines={measureLines}
-            />
-          )
+        {/* Two-layer view-swap animation:
+              SHELL  — slides in/out (translateX only, no scale — see notes in
+                       MODE_FLASH_STYLE for why scale would break the canvas).
+              CONTENT— fades + blurs slightly, with timing offset from the shell
+                       so the "container appears first, then the notes resolve"
+                       feel comes through.
+            Also layered: the mode-switch dim (modeTransitioning) which just
+            briefly dims everything so a mid-session mode change reads as an
+            intentional event.  Children DON'T unmount during mode-switch dim
+            — they keep state (e.g. the sheet's cached OSMD instance). */}
+        <div
+          className={[
+            'flex-1 min-h-0 flex flex-col transition-opacity duration-200 ease-out',
+            modeTransitioning ? 'opacity-0' : 'opacity-100',
+            swapPhase === 'leaving'  ? 'shell-leaving'  : '',
+            swapPhase === 'entering' ? 'shell-entering' : '',
+          ].join(' ')}
+        >
+          <div
+            className={[
+              'flex-1 min-h-0 flex flex-col',
+              swapPhase === 'leaving'  ? 'content-leaving'  : '',
+              swapPhase === 'entering' ? 'content-entering' : '',
+            ].join(' ')}
+          >
+            {showSheetMusic ? (
+              <SheetMusic
+                midiFile={midiFile}
+                currentTimeRef={currentTimeRef}
+                activeKeys={activeKeys}
+                highlightMode={showFallingNotes}
+              />
+            ) : (
+              showFallingNotes && (
+                <FallingNotes
+                  notes={renderNotes}
+                  currentTime={currentTime}
+                  keyboardHeight={KEYBOARD_HEIGHT}
+                  practiceMode={!isViewMode}
+                  zoom={zoom}
+                  showLaneLines={measureLines}
+                />
+              )
+            )}
+          </div>
+        </div>
+
+        {/* Mode-switch flash label — shows the new mode briefly in the centre. */}
+        {modeFlash !== null && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div
+              key={modeFlash}
+              className="px-6 py-3 rounded-2xl bg-slate-900/80 backdrop-blur border border-blue-400/30 shadow-2xl text-white text-lg font-semibold select-none"
+              style={{
+                animation: 'modeFlash 1.0s cubic-bezier(0.16,1,0.3,1) forwards',
+                boxShadow: '0 0 40px rgba(80,140,255,0.45)',
+              }}
+            >
+              {MODE_LABELS[modeFlash] ?? modeFlash}
+            </div>
+          </div>
         )}
 
         {/* Countdown overlay */}

@@ -88,11 +88,19 @@ export default function FallingNotes({
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1
-      const rect = container.getBoundingClientRect()
-      canvas.width  = rect.width  * dpr
-      canvas.height = rect.height * dpr
-      canvas.style.width  = rect.width  + 'px'
-      canvas.style.height = rect.height + 'px'
+      // Use offsetWidth/Height — these are the LAYOUT size and are unaffected
+      // by any `transform: scale(...)` on an ancestor (e.g. the view-swap
+      // animation).  getBoundingClientRect returns the visually-transformed
+      // rect, so if the canvas was first sized mid-animation while the parent
+      // was at scale(0.94), the canvas would lock in at 94 % of its true size
+      // — manifesting as a thin gap between the canvas bottom and the piano.
+      const w = container.offsetWidth
+      const h = container.offsetHeight
+      if (!w || !h) return
+      canvas.width  = w * dpr
+      canvas.height = h * dpr
+      canvas.style.width  = w + 'px'
+      canvas.style.height = h + 'px'
     }
 
     const ro = new ResizeObserver(resize)

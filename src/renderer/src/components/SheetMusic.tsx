@@ -1,121 +1,21 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
-import type { MidiNote, Hand } from '../types'
+import type { MidiFileData, Hand } from '../types'
+import {
+  getCachedSheet, preloadSheet, attachCachedTo, detachCachedToStorage
+} from '../utils/sheetPreload'
 
-// ─── Duration table ───────────────────────────────────────────────────────────
-const DIVS = 16
-
-type DurDef = { div: number; type: string; dot?: true }
-const DUR_TABLE: DurDef[] = [
-  { div: 64, type: 'whole' },
-  { div: 48, type: 'half',    dot: true },
-  { div: 32, type: 'half' },
-  { div: 24, type: 'quarter', dot: true },
-  { div: 16, type: 'quarter' },
-  { div: 12, type: 'eighth',  dot: true },
-  { div:  8, type: 'eighth' },
-  { div:  6, type: '16th',   dot: true },
-  { div:  4, type: '16th' },
-  { div:  2, type: '32nd' },
-  { div:  1, type: '64th' },
-]
-function snapDur(divs: number): DurDef {
-  return DUR_TABLE.reduce((b, d) => Math.abs(d.div - divs) < Math.abs(b.div - divs) ? d : b)
-}
-
-// ─── Pitch helpers ────────────────────────────────────────────────────────────
-const PC_STEPS  = ['C','C','D','D','E','F','F','G','G','A','A','B']
-const PC_ALTERS = [ 0,  1,  0,  1,  0,  0,  1,  0,  1,  0,  1,  0]
-function midiPitch(midi: number) {
-  const pc = midi % 12
-  return { step: PC_STEPS[pc], octave: Math.floor(midi / 12) - 1, alter: PC_ALTERS[pc] }
-}
-
-// ─── XML helpers ──────────────────────────────────────────────────────────────
-function noteEl(p: ReturnType<typeof midiPitch>, d: DurDef, staff: number, voice: number, chord: boolean): string {
-  return ['<note>', chord ? '<chord/>' : '',
-    `<pitch><step>${p.step}</step>`, p.alter ? `<alter>${p.alter}</alter>` : '',
-    `<octave>${p.octave}</octave></pitch>`,
-    `<duration>${d.div}</duration><voice>${voice}</voice><type>${d.type}</type>`,
-    d.dot ? '<dot/>' : '', `<staff>${staff}</staff></note>`].join('')
-}
-function restEl(d: DurDef, staff: number, voice: number): string {
-  return `<note><rest/><duration>${d.div}</duration><voice>${voice}</voice><type>${d.type}</type>${d.dot ? '<dot/>' : ''}<staff>${staff}</staff></note>`
-}
-function fillRests(total: number, staff: number, voice: number): string {
-  let xml = '', rem = total
-  while (rem > 0) {
-    const d = DUR_TABLE.find(x => x.div <= rem) ?? DUR_TABLE[DUR_TABLE.length - 1]
-    xml += restEl(d, staff, voice); rem -= d.div
-  }
-  return xml
-}
-
-// ─── MIDI → MusicXML ─────────────────────────────────────────────────────────
-function midiToMusicXml(notes: MidiNote[], bpm: number, ts: { numerator: number; denominator: number }, activeHands: Hand[]): string {
-  const bpm_    = Math.max(1, bpm)
-  const divsPerM = Math.round(ts.numerator * (4 / ts.denominator) * DIVS)
-  const toDivs   = (s: number) => Math.round(s * bpm_ / 60 * DIVS)
-
-  const filtered = notes.filter(n => n.hand === 'unknown' || activeHands.includes(n.hand))
-  if (!filtered.length) return ''
-
-  const isRight = (n: MidiNote) => n.hand === 'right' || (n.hand !== 'left' && n.midi >= 60)
-  const treble = filtered.filter(isRight)
-  const bass   = filtered.filter(n => !isRight(n))
-
-  const totalM = Math.ceil(Math.max(...filtered.map(n => toDivs(n.time + n.duration)), divsPerM) / divsPerM)
-
-  const buildStaff = (sNotes: MidiNote[], staff: number, voice: number, mi: number): string => {
-    const mStart = mi * divsPerM, mEnd = mStart + divsPerM
-    type ND = { pos: number; dur: DurDef; midi: number }
-    const inM: ND[] = sNotes
-      .filter(n => { const d = toDivs(n.time); return d >= mStart && d < mEnd })
-      .map(n => ({ pos: toDivs(n.time) - mStart, dur: snapDur(Math.max(1, Math.min(toDivs(n.duration), mEnd - toDivs(n.time)))), midi: n.midi }))
-      .sort((a, b) => a.pos - b.pos || a.midi - b.midi)
-    const cm = new Map<number, ND[]>()
-    for (const n of inM) { if (!cm.has(n.pos)) cm.set(n.pos, []); cm.get(n.pos)!.push(n) }
-    let xml = '', cur = 0
-    for (const [pos, chord] of [...cm.entries()].sort((a, b) => a[0] - b[0])) {
-      if (pos > cur) { xml += fillRests(pos - cur, staff, voice); cur = pos }
-      const act = snapDur(Math.min(chord[0].dur.div, divsPerM - pos))
-      chord.forEach((n, i) => { xml += noteEl(midiPitch(n.midi), act, staff, voice, i > 0) })
-      cur = pos + act.div
-    }
-    if (divsPerM - cur > 0) xml += fillRests(divsPerM - cur, staff, voice)
-    return xml
-  }
-
-  const measures = Array.from({ length: totalM }, (_, m) => {
-    let x = `<measure number="${m + 1}">`
-    if (m === 0) x += [
-      `<attributes><divisions>${DIVS}</divisions><key><fifths>0</fifths></key>`,
-      `<time><beats>${ts.numerator}</beats><beat-type>${ts.denominator}</beat-type></time>`,
-      `<staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef>`,
-      `<clef number="2"><sign>F</sign><line>4</line></clef></attributes>`,
-      `<direction placement="above"><direction-type><metronome parentheses="no">`,
-      `<beat-unit>quarter</beat-unit><per-minute>${Math.round(bpm_)}</per-minute>`,
-      `</metronome></direction-type><sound tempo="${Math.round(bpm_)}"/></direction>`,
-    ].join('')
-    x += buildStaff(treble, 1, 1, m)
-    x += `<backup><duration>${divsPerM}</duration></backup>`
-    x += buildStaff(bass, 2, 2, m)
-    return x + '</measure>'
-  })
-
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">',
-    '<score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">',
-    measures.join(''), '</part></score-partwise>',
-  ].join('')
-}
-
-// ─── Binary search for cursor step ───────────────────────────────────────────
+// ─── Binary search helpers ────────────────────────────────────────────────────
 function bsearchStep(steps: number[], t: number): number {
   if (!steps.length) return 0
   let lo = 0, hi = steps.length - 1
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (steps[mid] <= t) lo = mid; else hi = mid - 1 }
+  return lo
+}
+// First index i where refs[i].timeInSeconds >= target
+function lowerBoundRefs(refs: NoteRef[], target: number): number {
+  let lo = 0, hi = refs.length
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (refs[mid].timeInSeconds < target) lo = mid + 1; else hi = mid }
   return lo
 }
 
@@ -128,6 +28,7 @@ interface NoteRef {
   svgId:         string
   isRight:       boolean   // treble = right hand
   isBlack:       boolean   // black key (sharp or flat)
+  midi:          number    // MIDI note number (OSMD halfTone + 12)
 }
 
 // Black key pitch classes: C#=1, D#=3, F#=6, G#=8, A#=10
@@ -161,6 +62,8 @@ function collectNoteRefs(osmd: OpenSheetMusicDisplay, bpm: number): NoteRef[] {
                 // halfTone % 12 gives pitch class (0=C … 11=B).
                 const halfTone: number = (gnote.sourceNote?.Pitch?.halfTone ?? 0)
                 const isBlack = BLACK_PCS.has(((halfTone % 12) + 12) % 12)
+                // OSMD halfTone: C0=0; MIDI: C-1=0 → offset is +12
+                const midi = halfTone + 12
 
                 const durWN = gnote.sourceNote?.Length?.RealValue ?? 0.25
                 refs.push({
@@ -169,6 +72,7 @@ function collectNoteRefs(osmd: OpenSheetMusicDisplay, bpm: number): NoteRef[] {
                   svgId,
                   isRight,
                   isBlack,
+                  midi,
                 })
               } catch { /* ignore */ }
             }
@@ -177,28 +81,16 @@ function collectNoteRefs(osmd: OpenSheetMusicDisplay, bpm: number): NoteRef[] {
       }
     }
   } catch (e) { console.warn('[SheetMusic] collectNoteRefs:', e) }
+  // Sort by time for binary search. OSMD processes staff-0 then staff-1 per row,
+  // so same-beat notes from both staves arrive interleaved — sort fixes this.
+  refs.sort((a, b) => a.timeInSeconds - b.timeInSeconds)
   console.log('[SheetMusic] collected', refs.length, 'note refs')
   return refs
 }
 
-// ─── Highlight color & transition ─────────────────────────────────────────────
-// Inject one global CSS rule (once per page) that gives every path inside the
-// OSMD container a smooth fill transition.  This makes highlights fade in/out
-// automatically without per-element style management.
-const STYLE_ID = 'sheet-music-path-transitions'
-function ensureTransitionStyle() {
-  if (document.getElementById(STYLE_ID)) return
-  const s = document.createElement('style')
-  s.id = STYLE_ID
-  // Scope to elements that carry data-osmd so we don't affect the rest of the UI.
-  // The transition applies to the fill property of every SVG path inside OSMD.
-  s.textContent = `
-    [data-osmd] svg path {
-      transition: fill 0.12s ease, stroke 0.12s ease;
-    }
-  `
-  document.head.appendChild(s)
-}
+// ─── Highlight color ──────────────────────────────────────────────────────────
+// No CSS transition — highlights appear instantly so they match the audio timing.
+// Transitions were removed because animating fill on 60 fps caused frame drops.
 
 // 4-colour highlight scheme — mirrors FallingNotes & PianoKeyboard palette.
 // Treble staff (right hand): blue shades.  Bass staff (left hand): orange shades.
@@ -325,29 +217,56 @@ function LockOpenIcon() {
     </svg>
   )
 }
+// Sun / moon icons for the dark-mode toggle.  Both 24×24 viewBox so they can
+// be cross-faded in the same container without size jumps during animation.
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+      <path d="M12 7a5 5 0 100 10 5 5 0 000-10zm0-5a1 1 0 011 1v2a1 1 0 11-2 0V3a1 1 0 011-1zm0 17a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1zM4.22 5.64a1 1 0 011.42 0l1.41 1.41a1 1 0 11-1.41 1.42L4.22 7.05a1 1 0 010-1.41zm12.73 12.72a1 1 0 011.41 0l1.42 1.41a1 1 0 11-1.42 1.42l-1.41-1.42a1 1 0 010-1.41zM2 12a1 1 0 011-1h2a1 1 0 110 2H3a1 1 0 01-1-1zm17 0a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zM5.64 19.78a1 1 0 010-1.42l1.41-1.41a1 1 0 011.42 1.41l-1.42 1.42a1 1 0 01-1.41 0zm12.72-12.73a1 1 0 010-1.41l1.41-1.42a1 1 0 011.42 1.42l-1.42 1.41a1 1 0 01-1.41 0z"/>
+    </svg>
+  )
+}
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+      <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+    </svg>
+  )
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 interface SheetMusicProps {
-  notes:          MidiNote[]
-  bpm:            number
-  timeSignature:  { numerator: number; denominator: number }
-  currentTime:    number
-  activeHands:    Hand[]
+  midiFile:       MidiFileData
+  // Mutable ref instead of a plain number — currentTime is updated 60 × per
+  // second by the parent's RAF; receiving it as a prop would re-render this
+  // component every frame, run the cursor-sync effect every frame, and drop
+  // frames during playback (perceived as audio stutter).  Passing a stable
+  // ref lets us read the value in an internal RAF loop without re-rendering.
+  currentTimeRef: React.MutableRefObject<number>
+  activeKeys:     Map<number, { hand: Hand; hitState?: string; time?: number }>
   highlightMode?: boolean
 }
 
-export default function SheetMusic({
-  notes, bpm, timeSignature, currentTime, activeHands, highlightMode = false
+function SheetMusic({
+  midiFile, currentTimeRef, activeKeys, highlightMode = false
 }: SheetMusicProps): React.JSX.Element {
+  const bpm            = midiFile.bpm
   const scrollRef      = useRef<HTMLDivElement>(null)   // the overflow-y-auto scroll wrapper
-  const containerRef   = useRef<HTMLDivElement>(null)   // the inner OSMD rendering target
+  const wrapperRef     = useRef<HTMLDivElement>(null)   // host for the cached OSMD container
   const osmdRef        = useRef<OpenSheetMusicDisplay | null>(null)
   const stepsRef       = useRef<number[]>([])
   const stepIdxRef     = useRef(0)
   const loadedRef      = useRef(false)
-  const currentTimeRef = useRef(currentTime)
   const noteRefsRef    = useRef<NoteRef[]>([])
   const prevHighRef    = useRef<HTMLElement[]>([])
+  const prevHighKeyRef = useRef<string>('')   // last highlighted svgId set — skip DOM when unchanged
+
+  // Loading state: only true if the home-page preload didn't populate the
+  // cache.  When the cache is hit (the common case) we start false so the
+  // overlay never even renders → no flash, no transition jank.
+  const [isLoading, setIsLoading] = useState(
+    () => !getCachedSheet(midiFile.name, midiFile.bpm)
+  )
 
   // Auto-scroll lock: true = scroll to keep cursor/highlights in view (default)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -357,10 +276,20 @@ export default function SheetMusic({
     setAutoScroll(v => { autoScrollRef.current = !v; return !v })
   }, [])
 
-  useEffect(() => { currentTimeRef.current = currentTime }, [currentTime])
-
-  // Inject CSS transition rule once on mount
-  useEffect(() => { ensureTransitionStyle() }, [])
+  // Sheet dark mode — persisted across the session.  Implemented as a CSS
+  // filter (invert + hue-rotate) on the OSMD wrapper, so OSMD itself doesn't
+  // need to know about colours; black notes become white, the white paper
+  // becomes black, and the coloured highlights stay roughly the same hue.
+  const [darkSheet, setDarkSheet] = useState(
+    () => localStorage.getItem('sheetDarkMode') === 'true'
+  )
+  const toggleDarkSheet = useCallback(() => {
+    setDarkSheet((v) => {
+      const next = !v
+      localStorage.setItem('sheetDarkMode', String(next))
+      return next
+    })
+  }, [])
 
   // Block user wheel / touch scroll when auto-scroll lock is ON.
   // We need a non-passive listener so preventDefault() actually works.
@@ -377,163 +306,322 @@ export default function SheetMusic({
     }
   }, [autoScroll])
 
-  // ── Build and load OSMD ─────────────────────────────────────────────────────
+  // ── Load OSMD (cache-first, with on-demand fallback) ───────────────────────
+  //
+  // Fast path: the home page pre-rendered the sheet into a detached container
+  // before navigating here.  We just append that container into our wrapper
+  // and read out cursor / refs — no parse, no render, no main-thread block.
+  //
+  // Slow path (fallback): no cache exists (preload failed or was skipped),
+  // so we trigger preload now.  The loading overlay stays visible until done.
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
 
     loadedRef.current = false
+    setIsLoading(true)
     clearHighlights(prevHighRef.current)
+    prevHighKeyRef.current = ''
     resetScrollState()
 
     let cancelled = false
-    const timer = setTimeout(() => {
-      if (cancelled) return
-      const xml = midiToMusicXml(notes, bpm, timeSignature, activeHands)
-      if (!xml || cancelled) return
 
-      if (!osmdRef.current) {
-        osmdRef.current = new OpenSheetMusicDisplay(el, {
-          autoResize: false,   // keep VexFlow IDs stable (no re-render → no stale ids)
-          drawingParameters: 'compact',
-          drawTitle: false, drawSubtitle: false, drawComposer: false, drawLyricist: false,
-          cursorsOptions: [{ type: 0, color: '#3b82f6', alpha: 0.15, follow: false }],
-        })
-      }
+    const initFromCache = () => {
+      const cached = attachCachedTo(wrapper)
+      if (!cached || cancelled) return false
 
-      const osmd = osmdRef.current
-      osmd.load(xml).then(() => {
-        if (cancelled) return
-        osmd.render()
+      const osmd = cached.osmd
+      osmdRef.current = osmd
 
+      // Reuse pre-computed refs+steps on re-attach (toggle off → on) so we
+      // don't walk the OSMD tree every time.  First time through we compute
+      // and stash them on the cache for subsequent toggles.
+      const isReattach = !!cached.extras
+      if (cached.extras) {
+        noteRefsRef.current = cached.extras.noteRefs as NoteRef[]
+        stepsRef.current    = cached.extras.steps
+        stepIdxRef.current  = cached.extras.lastStepIdx
+      } else {
         noteRefsRef.current = collectNoteRefs(osmd, bpm)
 
-        // ── Collect step timestamps ───────────────────────────────────────────────
-        const steps: number[] = []
+        const collected: number[] = []
         osmd.cursor.reset()
-        osmd.cursor.show()
         while (!osmd.cursor.Iterator.EndReached) {
-          steps.push(osmd.cursor.Iterator.currentTimeStamp.RealValue * 4 * 60 / bpm)
+          collected.push(osmd.cursor.Iterator.currentTimeStamp.RealValue * 4 * 60 / bpm)
           osmd.cursor.next()
         }
-        stepsRef.current = steps
+        stepsRef.current = collected
 
-        // ── Position cursor at the current playback time ─────────────────────────
-        const t0       = currentTimeRef.current
-        const initStep = steps.length ? bsearchStep(steps, t0) : 0
-        osmd.cursor.reset()
-        for (let i = 0; i < initStep; i++) osmd.cursor.next()
-        stepIdxRef.current = initStep
-        loadedRef.current = true
+        cached.extras = { noteRefs: noteRefsRef.current, steps: collected, lastStepIdx: 0 }
+      }
+      const steps = stepsRef.current
+      osmd.cursor.show()
 
-        // ── Initial scroll: center cursor row using live DOM position ─────────────
-        // osmd.cursor.CursorElement is null in OSMD 1.9.9 — query by OSMD's own ID.
-        // force=true: skip threshold check so we always land on the right row at start.
-        scrollToCursor(scrollRef.current, true)
-      }).catch(console.error)
-    }, 80)
-
-    return () => { cancelled = true; clearTimeout(timer); loadedRef.current = false }
-  }, [notes, bpm, timeSignature, activeHands])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Sync cursor position & auto-scroll ─────────────────────────────────────
-  useEffect(() => {
-    if (!loadedRef.current || !osmdRef.current) return
-    const osmd  = osmdRef.current
-    const steps = stepsRef.current
-    if (!steps.length) return
-
-    const curIdx = stepIdxRef.current
-    const target = bsearchStep(steps, currentTime)
-    const moved  = target !== curIdx
-    if (moved) {
-      if (target > curIdx && target - curIdx <= 3) {
+      // ── Position cursor at the current playback time ────────────────────────
+      //
+      // On FIRST load: reset and walk forward from 0 to the target step.
+      // On RE-ATTACH: OSMD preserves cursor position across detach/attach in
+      // the same instance.  Toggling off → on while playing only advances the
+      // song by ~700 ms (one animation), so usually the saved step is within
+      // a few of target — we just advance from there.  Skipping the full
+      // reset-then-walk-from-0 saves up to a few hundred ms of cursor.next()
+      // calls on long songs at later positions, which was the biggest cause
+      // of the occasional toggle lag.
+      const t0     = currentTimeRef.current
+      const target = steps.length ? bsearchStep(steps, t0) : 0
+      if (isReattach && stepIdxRef.current <= target && target - stepIdxRef.current <= 16) {
+        // Forward delta within reason — just advance.
         while (stepIdxRef.current < target) { osmd.cursor.next(); stepIdxRef.current++ }
       } else {
+        // First load OR rewind OR big jump — full reset.
         osmd.cursor.reset()
         for (let i = 0; i < target; i++) osmd.cursor.next()
         stepIdxRef.current = target
       }
+      loadedRef.current = true
+
+      // ── Initial scroll: center cursor row using live DOM position ───────────
+      scrollToCursor(scrollRef.current, true)
+      setIsLoading(false)
+      return true
     }
 
-    // Auto-scroll: center cursor row when step advances.
-    if (autoScrollRef.current && moved) {
-      scrollToCursor(scrollRef.current)
+    if (getCachedSheet(midiFile.name, midiFile.bpm)) {
+      // Cache hit — attach synchronously.  No await, no block, no flash.
+      initFromCache()
+    } else {
+      // Cache miss — preload on demand.  Yields to the browser first so the
+      // overlay paints before the synchronous render block hits.
+      preloadSheet(midiFile).then((ok) => {
+        if (!ok || cancelled) return
+        initFromCache()
+      }).catch((err) => {
+        console.error(err)
+        if (!cancelled) setIsLoading(false)
+      })
     }
-  }, [currentTime])
 
-  // ── Highlight full notes (throttled to 16th-note boundaries) ───────────────
+    return () => {
+      cancelled = true
+      loadedRef.current = false
+      // Persist the cursor position so the next attach can resume in O(delta)
+      // instead of O(N) cursor.next() calls from 0.
+      const cached = getCachedSheet(midiFile.name, midiFile.bpm)
+      if (cached?.extras) cached.extras.lastStepIdx = stepIdxRef.current
+      // Clear stale inline fill/stroke on previously-highlighted notes BEFORE
+      // detaching: the cached container survives in body across toggles, so
+      // any styles left here would resurrect when re-attached.
+      clearHighlights(prevHighRef.current)
+      prevHighKeyRef.current = ''
+      // Move the cached container back to body BEFORE React unmounts our
+      // wrapper — otherwise React would tear down our subtree and destroy the
+      // pre-rendered SVG along with it.
+      detachCachedToStorage()
+    }
+    // bpm derives from midiFile so it doesn't need to be in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midiFile])
+
+  // ── Sync cursor position & auto-scroll ─────────────────────────────────────
   //
-  // Strategy A: use timing + VexFlow DOM ids to find each active note's group.
-  //   Colors notehead paths, stem, and ledger lines — the full note.
+  // RAF-driven, NOT a useEffect on [currentTime].  The parent updates
+  // currentTimeRef 60 × per second; tying this work to a React effect would
+  // re-run cleanup+setup every frame and trigger SheetMusic re-renders that
+  // ripple into FallingNotes / PianoKeyboard, dropping frames and making
+  // played notes feel slightly behind the audio when the sheet is open.
+  // Reading the ref inside our own RAF keeps it all out of React's reconciler.
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      if (loadedRef.current && osmdRef.current) {
+        const osmd  = osmdRef.current
+        const steps = stepsRef.current
+        if (steps.length) {
+          const ct     = currentTimeRef.current
+          const curIdx = stepIdxRef.current
+          const target = bsearchStep(steps, ct)
+          if (target !== curIdx) {
+            if (target > curIdx && target - curIdx <= 3) {
+              while (stepIdxRef.current < target) { osmd.cursor.next(); stepIdxRef.current++ }
+            } else {
+              osmd.cursor.reset()
+              for (let i = 0; i < target; i++) osmd.cursor.next()
+              stepIdxRef.current = target
+            }
+            if (autoScrollRef.current) scrollToCursor(scrollRef.current)
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [currentTimeRef])
+
+  // ── Highlight full notes ────────────────────────────────────────────────────
   //
-  // Strategy B (fallback): cursor x+y position overlap with .vf-notehead class.
-  //   Activates when getSVGId() returned nothing for all notes.
-  const beat16 = Math.floor(currentTime * bpm / 60 * 4)
+  // Driven by activeKeys (which MIDI numbers are currently playing) rather than
+  // by currentTime.  This fires only at note boundaries (~4–8×/s) instead of
+  // every RAF frame, eliminating CSS-transition frame-drop issues.
+  //
+  // Matching uses note.time (stored in activeKeys.time) for an exact lookup —
+  // avoiding the "closest ref to currentTime" ambiguity that caused re-highlights
+  // when the same pitch repeated quickly.  The ±150 ms window covers OSMD rounding
+  // (~30 ms max) with plenty of margin.
+  //
+  // Practice mode: activeKeys.time is undefined → falls back to currentTimeRef for
+  // approximate matching so the sheet still highlights the user's pressed key.
 
   useEffect(() => {
-    clearHighlights(prevHighRef.current)
-    if (!highlightMode || !loadedRef.current || !osmdRef.current) return
-
-    const t    = currentTimeRef.current
-    const refs = noteRefsRef.current
-
-    // Strategy A ──────────────────────────────────────────────────────────────
-    if (refs.length > 0) {
-      let found = 0
-      for (const { timeInSeconds, durSeconds, svgId, isRight, isBlack } of refs) {
-        if (t < timeInSeconds - 0.08 || t >= timeInSeconds + durSeconds + 0.05) continue
-        colorFullNote(svgId, isRight, isBlack, prevHighRef.current)
-        found++
+    if (!highlightMode || !loadedRef.current || !osmdRef.current) {
+      if (prevHighKeyRef.current !== '') {
+        clearHighlights(prevHighRef.current)
+        prevHighKeyRef.current = ''
       }
-      if (found > 0) return
+      return
     }
 
-    // Strategy B (fallback) ───────────────────────────────────────────────────
-    const container = containerRef.current
+    const refs = noteRefsRef.current
+
+    // ── Strategy A: currentTime → VexFlow DOM id ─────────────────────────────
+    if (refs.length > 0) {
+      // Search by current playback position, NOT by individual note.time entries.
+      //
+      // Why not per-entry matching:
+      //   Long-duration notes (e.g. a 2-beat bass note) stay in activeKeys while
+      //   newer notes are added.  Each entry has a different .time, so searching
+      //   ±80ms around each entry simultaneously highlights refs at 3+ different
+      //   beat positions → "jumping" appearance.
+      //
+      // currentTimeRef.current is accurate: the RAF updates it before calling
+      // setActiveKeys, so by the time this effect runs the ref is ≤ 32ms ahead
+      // (1-2 frames), which is within the search window.
+      //
+      // We still do NOT match by ref.midi — OSMD Pitch.halfTone omits key-
+      // signature accidentals, so ref.midi is wrong after a key change.
+      const now    = currentTimeRef.current
+      const WINDOW = 0.08   // ±80 ms — covers OSMD quantisation (≤27 ms at 70 BPM)
+
+      const active: NoteRef[] = []
+      const seenIds = new Set<string>()
+
+      const lo = lowerBoundRefs(refs, now - WINDOW)
+      for (let i = lo; i < refs.length; i++) {
+        const ref = refs[i]
+        if (ref.timeInSeconds > now + WINDOW) break
+        if (seenIds.has(ref.svgId)) continue
+        seenIds.add(ref.svgId)
+        active.push(ref)
+      }
+
+      // Key-dedup: skip all DOM ops when the highlighted set hasn't changed.
+      const key = active.map(r => r.svgId).sort().join(',')
+      if (key === prevHighKeyRef.current) return
+      prevHighKeyRef.current = key
+
+      clearHighlights(prevHighRef.current)
+      for (const { svgId, isRight, isBlack } of active) {
+        colorFullNote(svgId, isRight, isBlack, prevHighRef.current)
+      }
+      return
+    }
+
+    // ── Strategy B (fallback): cursor x/y overlap with .vf-notehead ──────────
+    const container = wrapperRef.current
     const cursorEl  = osmdRef.current.cursor.CursorElement as HTMLElement | null | undefined
-    if (!container || !cursorEl) return
+    if (!container || !cursorEl) {
+      if (prevHighKeyRef.current !== '') {
+        clearHighlights(prevHighRef.current)
+        prevHighKeyRef.current = ''
+      }
+      return
+    }
     const cr = cursorEl.getBoundingClientRect()
     if (!cr.width || !cr.height) return
 
     const xL = cr.left - 8, xR = cr.right + 8
     const yT = cr.top - 60,  yB = cr.bottom + 60
 
+    const fbKey = `B:${Math.round(xL)},${Math.round(yT)}`
+    if (fbKey === prevHighKeyRef.current) return
+    prevHighKeyRef.current = fbKey
+
+    clearHighlights(prevHighRef.current)
     container.querySelectorAll<HTMLElement>('.vf-notehead').forEach(nh => {
       try {
         const r = nh.getBoundingClientRect()
         if (!r.width || !r.height || r.right < xL || r.left > xR || r.bottom < yT || r.top > yB) return
-        // Fallback: no hand info available, default to right-white colour
         nh.querySelectorAll<HTMLElement>('path').forEach(p => applyColor(p, true, false, prevHighRef.current))
       } catch { /* ignore */ }
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [beat16, highlightMode])
-
-  // Clear when highlight mode turns off
-  useEffect(() => {
-    if (!highlightMode) clearHighlights(prevHighRef.current)
-  }, [highlightMode])
+  }, [activeKeys, highlightMode])
 
   return (
     // Outer wrapper: fills the layout slot, provides positioning context for the
     // floating lock button (position:relative).
     <div className="flex-1 min-h-0 relative overflow-hidden">
+      {/* Keyframes + filter rule for the dark-mode toggle. */}
+      <style>{`
+        .sheet-osmd-host { transition: filter 320ms cubic-bezier(0.4, 0, 0.2, 1); }
+        .sheet-osmd-host[data-dark="true"] {
+          filter: invert(0.92) hue-rotate(180deg);
+        }
+        @keyframes themeIconIn {
+          0%   { opacity: 0; transform: rotate(-90deg) scale(0.6); }
+          100% { opacity: 1; transform: rotate(0)     scale(1);   }
+        }
+        @keyframes themeIconOut {
+          0%   { opacity: 1; transform: rotate(0)    scale(1);   }
+          100% { opacity: 0; transform: rotate(90deg) scale(0.6); }
+        }
+        .theme-icon-in  { animation: themeIconIn  280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+      `}</style>
 
       {/* Scrollable OSMD rendering area.
           IMPORTANT: Do NOT use both Tailwind `absolute` and inline position:relative —
           the inline style would override Tailwind and `inset-0` would stop working.
           Instead we set position:relative via CSS class on a wrapper, letting the
           OSMD cursor <img> (position:absolute) be contained inside the scroll area. */}
-      <div ref={scrollRef} className="absolute inset-0 overflow-y-auto overflow-x-hidden bg-white">
-        {/* Inner div carries position:relative so the OSMD cursor <img>
-            (position:absolute) is positioned relative to this element — keeping
-            cursor coords aligned with SVG note elements when scrolled. */}
+      <div
+        ref={scrollRef}
+        className={[
+          'absolute inset-0 overflow-y-auto overflow-x-hidden transition-colors duration-300',
+          darkSheet ? 'bg-slate-900' : 'bg-white',
+        ].join(' ')}
+      >
+        {/* Wrapper: the pre-rendered OSMD container (from sheetPreload) is
+            appended here as a child on mount, and moved back to body on
+            unmount so React doesn't tear it down with the rest of our DOM.
+            When dark mode is on we apply an `invert + hue-rotate` filter so
+            black notes/staff become white but the coloured highlights stay
+            roughly the same hue.  The transition is animated for a smooth
+            day → night swap. */}
         <div
-          ref={containerRef}
-          data-osmd
+          ref={wrapperRef}
+          data-osmd-host
+          className="sheet-osmd-host"
+          data-dark={darkSheet ? 'true' : 'false'}
           style={{ position: 'relative', minHeight: '100%' }}
         />
+      </div>
+
+      {/* Loading overlay ─────────────────────────────────────────────────────
+          Covers the area while OSMD parses + renders the score (a 1–2 s
+          synchronous block on the main thread).  Without it the user sees a
+          plain white flash — with it, they see a centred spinner + text and
+          know something is happening.  Stays mounted but pointer-events:none
+          when hidden so it can't accidentally swallow clicks. */}
+      <div
+        className={[
+          'absolute inset-0 z-10 flex items-center justify-center bg-white',
+          'transition-opacity duration-200',
+          isLoading ? 'opacity-100' : 'opacity-0 pointer-events-none',
+        ].join(' ')}
+      >
+        <div className="flex flex-col items-center gap-3 text-slate-500 select-none">
+          <div className="w-8 h-8 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin" />
+          <div className="text-sm">Đang tải sheet nhạc...</div>
+        </div>
       </div>
 
       {/* Auto-scroll lock button ─────────────────────────────────────────────
@@ -554,6 +642,36 @@ export default function SheetMusic({
       >
         {autoScroll ? <LockClosedIcon /> : <LockOpenIcon />}
       </button>
+
+      {/* Dark-mode toggle ────────────────────────────────────────────────────
+          Sits directly below the lock button.  Icon swaps between sun and
+          moon with a rotate + scale keyframe animation (re-keyed so each
+          press replays the entrance).  Background colour transitions to
+          match the current theme. */}
+      <button
+        onClick={toggleDarkSheet}
+        title={darkSheet ? 'Chế độ tối — nhấn để chuyển sáng' : 'Chế độ sáng — nhấn để chuyển tối'}
+        className={[
+          'absolute top-[3.25rem] right-3 z-20',
+          'w-8 h-8 rounded-full flex items-center justify-center',
+          'shadow-md backdrop-blur-sm',
+          'transition-all duration-300 select-none',
+          darkSheet
+            ? 'bg-slate-700/80 text-yellow-200 hover:bg-slate-700/95 hover:scale-110'
+            : 'bg-white/70 text-slate-600 border border-slate-200/60 hover:bg-white/90 hover:text-slate-800 hover:scale-110',
+        ].join(' ')}
+      >
+        <span key={darkSheet ? 'moon' : 'sun'} className="theme-icon-in inline-flex">
+          {darkSheet ? <MoonIcon /> : <SunIcon />}
+        </span>
+      </button>
     </div>
   )
 }
+
+// Memoize so SheetMusic doesn't re-render when only currentTime-driven state
+// changes upstream — we read currentTimeRef inside our own RAF instead.  All
+// remaining props are stable references in PracticePage (midiFile, activeKeys
+// only changes on note boundaries, etc.), so re-renders happen at note rate
+// (~4–8 Hz) instead of frame rate (60 Hz).
+export default React.memo(SheetMusic)

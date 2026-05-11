@@ -8,7 +8,7 @@
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "clean": "node -e \"require('fs').rmSync('dist', {recursive:true,force:true})\"",
+    "clean": "node scripts/clean.cjs",
     "package": "npm run clean && npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
     "package:installer": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
     "build:win": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",

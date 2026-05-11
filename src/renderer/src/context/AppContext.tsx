@@ -12,12 +12,21 @@ export interface ResumePoint {
   mode: PracticeMode
 }
 
+// Per-mode UI preferences (sheet/falling-notes visibility).  Stored as a Map
+// keyed by mode so each mode keeps its own toggles — switching to a different
+// mode falls back to defaults, NOT to whatever was set globally last.
+export interface ModePrefs {
+  showSheetMusic:   boolean
+  showFallingNotes: boolean
+}
+
 interface AppState {
   midiFile:          MidiFileData      | null
   practiceSettings:  PracticeSettings  | null
   fileList:          FileEntry[]
   folderPath:        string            | null
   resumePoint:       ResumePoint       | null
+  modePrefs:         Partial<Record<PracticeMode, ModePrefs>>
 }
 
 interface AppContextValue extends AppState {
@@ -27,6 +36,7 @@ interface AppContextValue extends AppState {
   updateFileList:      (fn: (prev: FileEntry[]) => FileEntry[])  => void
   setFolderPath:       (path: string | null)                     => void
   setResumePoint:      (rp: ResumePoint | null)                  => void
+  setModePrefs:        (mode: PracticeMode, prefs: Partial<ModePrefs>) => void
   clearAll:            ()                                         => void
 }
 
@@ -38,9 +48,21 @@ export function AppProvider({ children }: { children: React.ReactNode }): React.
   const [fileList,         setFileList]         = useState<FileEntry[]>([])
   const [folderPath,       setFolderPath]       = useState<string | null>(null)
   const [resumePoint,      setResumePoint]      = useState<ResumePoint | null>(null)
+  const [modePrefs,        setAllModePrefs]     = useState<Partial<Record<PracticeMode, ModePrefs>>>({})
 
   const updateFileList = useCallback((fn: (prev: FileEntry[]) => FileEntry[]) => {
     setFileList(fn)
+  }, [])
+
+  const setModePrefs = useCallback((mode: PracticeMode, prefs: Partial<ModePrefs>) => {
+    setAllModePrefs((prev) => ({
+      ...prev,
+      [mode]: {
+        showSheetMusic:   prev[mode]?.showSheetMusic   ?? false,
+        showFallingNotes: prev[mode]?.showFallingNotes ?? true,
+        ...prefs,
+      },
+    }))
   }, [])
 
   const clearAll = useCallback(() => {
@@ -50,9 +72,9 @@ export function AppProvider({ children }: { children: React.ReactNode }): React.
 
   return (
     <AppContext.Provider value={{
-      midiFile, practiceSettings, fileList, folderPath, resumePoint,
+      midiFile, practiceSettings, fileList, folderPath, resumePoint, modePrefs,
       setMidiFile, setPracticeSettings, setFileList, updateFileList,
-      setFolderPath, setResumePoint, clearAll
+      setFolderPath, setResumePoint, setModePrefs, clearAll
     }}>
       {children}
     </AppContext.Provider>

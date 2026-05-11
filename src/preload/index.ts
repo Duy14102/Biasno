@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 export interface MidiFileRef {
   name: string
@@ -23,7 +23,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('fs:readMidi', filePath),
 
   // App data path (for audio sample cache)
-  getDataPath: (): Promise<string> => ipcRenderer.invoke('app:getDataPath')
+  getDataPath: (): Promise<string> => ipcRenderer.invoke('app:getDataPath'),
+
+  // Resolve a dropped File's absolute filesystem path.  Electron 32+ removed
+  // the legacy `file.path` field; webUtils.getPathForFile is the replacement.
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
 })
 
 declare global {
@@ -34,6 +38,7 @@ declare global {
       scanMidiFolder: (folderPath: string) => Promise<MidiFileRef[]>
       readMidiFile: (filePath: string) => Promise<ArrayBuffer | null>
       getDataPath: () => Promise<string>
+      getPathForFile: (file: File) => string
     }
   }
 }

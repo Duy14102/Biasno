@@ -1,6 +1,7 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { parseMidiBuffer } from '../utils/midiUtils'
+import { preloadSheet } from '../utils/sheetPreload'
 import { useAppContext, type FileEntry } from '../context/AppContext'
 import { useMIDIDevice } from '../hooks/useMIDIDevice'
 import { useAudioEngine } from '../hooks/useAudioEngine'
@@ -11,6 +12,10 @@ const BAR_STYLE = `
 @keyframes mbar {
   0%, 100% { transform: scaleY(0.15); }
   50%       { transform: scaleY(1); }
+}
+@keyframes loadingbar {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
 }
 `
 
@@ -56,6 +61,8 @@ export default function HomePage(): React.JSX.Element {
   const [error, setError]             = useState<string | null>(null)
   const [hoveredPath, setHoveredPath] = useState<string | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
+  // Spinner on the import / folder buttons while their dialogs + I/O run.
+  const [busyAction, setBusyAction]   = useState<'import' | 'folder' | null>(null)
 
   // ─── MIDI device ──────────────────────────────────────────────────────────
   const { supported: midiSupported, devices, connectedId, connect, error: midiError } =
@@ -74,6 +81,10 @@ export default function HomePage(): React.JSX.Element {
       const data = await parseMidiBuffer(buffer, entry.name)
       if (data.notes.length === 0) { setError('File không chứa note nào'); return }
       setMidiFile(data)
+      // Pre-render the sheet music while the user is already waiting for
+      // navigation.  This shifts the 1–2 s OSMD render off the practice page,
+      // so opening the sheet there is instant.
+      await preloadSheet(data)
       navigate('/mode')
     } catch (e) {
       setError(`Lỗi: ${e instanceof Error ? e.message : 'Unknown'}`)
@@ -83,65 +94,200 @@ export default function HomePage(): React.JSX.Element {
   }, [setMidiFile, navigate])
 
   // ─── Import single file via dialog ────────────────────────────────────────
+  // Adds the row to the list IMMEDIATELY with a loading indicator so the user
+  // has visible feedback, then parses + warms the sheet preload cache in the
+  // background.  User stays on the home page.
   const handleImport = useCallback(async () => {
     setError(null)
-    const result = await window.electronAPI.openMidiFile()
+    setBusyAction('import')
+    let result: Awaited<ReturnType<typeof window.electronAPI.openMidiFile>>
+    try { result = await window.electronAPI.openMidiFile() }
+    finally { setBusyAction(null) }
     if (!result) return
+
+    // 1) Show the row right away so the user sees something happen.
+    const placeholder: FileEntry = { name: result.name, path: result.path, duration: undefined }
+    updateFileList((prev) =>
+      prev.some((f) => f.path === result.path) ? prev : [placeholder, ...prev]
+    )
+    setLoadingFile(result.path)
+
+    // 2) Yield one frame so the placeholder row + spinner actually paints
+    //    before we block the main thread parsing the MIDI buffer.  Without
+    //    this yield, parseMidiBuffer (synchronous body inside an async wrapper)
+    //    runs before React commits the state update → the loading state is
+    //    invisible until preload finishes (which can be instant for cached files).
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+
     try {
       const data = await parseMidiBuffer(result.buffer, result.name)
-      if (data.notes.length === 0) { setError('File không chứa note nào'); return }
-      const entry: FileEntry = { name: result.name, path: result.path, duration: data.duration }
-      updateFileList((prev) =>
-        prev.some((f) => f.path === result.path) ? prev : [entry, ...prev]
-      )
+      if (data.notes.length === 0) {
+        setError('File không chứa note nào')
+        updateFileList((prev) => prev.filter((f) => f.path !== result.path))
+        return
+      }
+      updateFileList((prev) => prev.map((f) =>
+        f.path === result.path ? { ...f, duration: data.duration } : f
+      ))
+      await preloadSheet(data)
     } catch (e) {
       setError(`Không đọc được file: ${e instanceof Error ? e.message : ''}`)
+      updateFileList((prev) => prev.filter((f) => f.path !== result.path))
+    } finally {
+      setLoadingFile(null)
     }
   }, [updateFileList])
 
   // ─── Choose folder ────────────────────────────────────────────────────────
+  // Spinner on the button covers both the native folder-pick dialog and the
+  // subsequent fs scan — the user gets continuous feedback from click to
+  // entries appearing.
   const handleChooseFolder = useCallback(async () => {
-    const folder = await window.electronAPI.openFolder()
-    if (!folder) return
-    setFolderPath(folder)
-    const refs = await window.electronAPI.scanMidiFolder(folder)
-    updateFileList((prev) => {
-      // Keep manually imported files not in this folder; merge folder files
-      const folderEntries: FileEntry[] = refs.map((r) => {
-        const existing = prev.find((f) => f.path === r.path)
-        return { name: r.name, path: r.path, duration: existing?.duration }
+    setError(null)
+    setBusyAction('folder')
+    try {
+      const folder = await window.electronAPI.openFolder()
+      if (!folder) return
+      setFolderPath(folder)
+      const refs = await window.electronAPI.scanMidiFolder(folder)
+      updateFileList((prev) => {
+        // Keep manually imported files not in this folder; merge folder files
+        const folderEntries: FileEntry[] = refs.map((r) => {
+          const existing = prev.find((f) => f.path === r.path)
+          return { name: r.name, path: r.path, duration: existing?.duration }
+        })
+        const manual = prev.filter((f) => !refs.some((r) => r.path === f.path))
+        return [...manual, ...folderEntries]
       })
-      const manual = prev.filter((f) => !refs.some((r) => r.path === f.path))
-      return [...manual, ...folderEntries]
-    })
+    } finally {
+      setBusyAction(null)
+    }
   }, [updateFileList, setFolderPath])
 
   // ─── Drag-drop ────────────────────────────────────────────────────────────
+  // Window-level listeners detect ANY file being dragged over the app — that
+  // way the drop zone on the aside lights up immediately when the user starts
+  // dragging, not only when the cursor happens to cross the aside.  The
+  // counter pattern dampens the dragenter/dragleave noise that fires for every
+  // child element the cursor crosses.
+  useEffect(() => {
+    let counter = 0
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types?.includes('Files')
+
+    const onEnter = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      counter++
+      if (counter === 1) setIsDragging(true)
+    }
+    const onLeave = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      counter = Math.max(0, counter - 1)
+      if (counter === 0) setIsDragging(false)
+    }
+    // preventDefault on dragover is required everywhere or the browser will
+    // refuse the drop (and would open the file as a navigation).
+    const onOver = (e: DragEvent) => { if (hasFiles(e)) e.preventDefault() }
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault()      // prevent browser from opening files dropped outside the aside
+      counter = 0
+      setIsDragging(false)
+    }
+
+    window.addEventListener('dragenter', onEnter)
+    window.addEventListener('dragleave', onLeave)
+    window.addEventListener('dragover',  onOver)
+    window.addEventListener('drop',      onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onEnter)
+      window.removeEventListener('dragleave', onLeave)
+      window.removeEventListener('dragover',  onOver)
+      window.removeEventListener('drop',      onDrop)
+    }
+  }, [])
+
+  // Aside-specific drag handlers — only here does the drop actually consume
+  // files.  preventDefault on dragover signals "this is a valid drop target".
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
+
   const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false)
-    const files = Array.from(e.dataTransfer.files).filter((f) =>
-      /\.(mid|midi)$/i.test(f.name)
-    )
-    for (const file of files) {
+    e.preventDefault()
+    // Window-level listener also resets isDragging; no local counter to clear.
+    setIsDragging(false)
+    setError(null)
+
+    const all     = Array.from(e.dataTransfer.files)
+    const midis   = all.filter((f) => /\.(mid|midi)$/i.test(f.name))
+
+    if (midis.length === 0) {
+      setError(all.length === 0
+        ? 'Không có file nào được kéo vào'
+        : 'File kéo vào không phải MIDI (.mid / .midi)')
+      return
+    }
+
+    // Add ALL dropped files as placeholders FIRST so the user immediately
+    // sees them in the list (with a loading indicator).  Then parse each;
+    // on success → fill in duration, on failure → remove the placeholder.
+    // The first newly-added file gets its sheet pre-rendered.
+    const queued: Array<{ file: File; path: string; name: string }> = []
+    for (const file of midis) {
+      let absPath = file.name
+      try { absPath = window.electronAPI.getPathForFile(file) || file.name } catch { /* fall back */ }
+      const name = file.name.replace(/\.(mid|midi)$/i, '')
+      const placeholder: FileEntry = { name, path: absPath, duration: undefined }
+      updateFileList((prev) =>
+        prev.some((f) => f.path === absPath) ? prev : [placeholder, ...prev]
+      )
+      queued.push({ file, path: absPath, name })
+    }
+
+    // Yield so the placeholders paint before we begin the parse loop.
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+
+    let firstNew: { entry: FileEntry; data: Awaited<ReturnType<typeof parseMidiBuffer>> } | null = null
+    const failed: string[] = []
+
+    for (const item of queued) {
+      setLoadingFile(item.path)
       try {
-        const buf  = await file.arrayBuffer()
-        const name = file.name.replace(/\.(mid|midi)$/i, '')
-        const data = await parseMidiBuffer(buf, name)
-        const entry: FileEntry = { name, path: file.name, duration: data.duration }
-        updateFileList((prev) =>
-          prev.some((f) => f.path === file.name) ? prev : [entry, ...prev]
-        )
-      } catch { /* skip bad file */ }
+        const buf  = await item.file.arrayBuffer()
+        const data = await parseMidiBuffer(buf, item.name)
+        if (data.notes.length === 0) {
+          failed.push(item.file.name)
+          updateFileList((prev) => prev.filter((f) => f.path !== item.path))
+          continue
+        }
+        // Fill in the duration once parsed.
+        updateFileList((prev) => prev.map((f) =>
+          f.path === item.path ? { ...f, duration: data.duration } : f
+        ))
+        if (!firstNew) firstNew = { entry: { name: item.name, path: item.path, duration: data.duration }, data }
+      } catch (err) {
+        failed.push(item.file.name)
+        updateFileList((prev) => prev.filter((f) => f.path !== item.path))
+        console.error('[drop parse]', err)
+      }
+    }
+
+    if (firstNew) {
+      // Keep the loading indicator on the first file while preloading.
+      setLoadingFile(firstNew.entry.path)
+      try { await preloadSheet(firstNew.data) }
+      finally { setLoadingFile(null) }
+    } else {
+      setLoadingFile(null)
+    }
+
+    if (failed.length) {
+      setError(`Không đọc được: ${failed.join(', ')}`)
     }
   }, [updateFileList])
 
   return (
-    <div
-      className="flex flex-col h-screen bg-slate-950 text-white"
-      onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-      onDragLeave={() => setIsDragging(false)}
-      onDrop={handleDrop}
-    >
+    <div className="flex flex-col h-screen bg-slate-950 text-white">
       {/* Inject keyframes once */}
       <style>{BAR_STYLE}</style>
 
@@ -214,13 +360,6 @@ export default function HomePage(): React.JSX.Element {
 
           {midiError && <p className="mt-4 text-xs text-red-400">{midiError}</p>}
 
-          {isDragging && (
-            <div className="mt-8 px-8 py-6 border-2 border-dashed border-blue-400 rounded-2xl text-blue-300 text-center">
-              <p className="text-3xl mb-2">🎵</p>
-              <p>Thả file MIDI vào đây</p>
-            </div>
-          )}
-
           {error && (
             <div className="mt-6 max-w-sm w-full px-4 py-3 bg-red-900/20 border border-red-700/50 rounded-lg text-red-400 text-sm">
               {error}
@@ -228,8 +367,16 @@ export default function HomePage(): React.JSX.Element {
           )}
         </main>
 
-        {/* ── RIGHT: MIDI file list ────────────────────────────────────────── */}
-        <aside className="w-80 flex flex-col bg-slate-900 overflow-hidden">
+        {/* ── RIGHT: MIDI file list ──────────────────────────────────────────
+            File drops are accepted only on this aside.  The overlay is driven
+            by `isDragging` which a window-level listener flips on as soon as
+            ANY file enters the app — so the drop zone is visible the moment
+            the drag starts, not only once the cursor crosses the aside. */}
+        <aside
+          className="w-80 flex flex-col bg-slate-900 overflow-hidden relative"
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
           {/* Panel header */}
           <div className="px-4 pt-4 pb-3 border-b border-slate-700/60">
             <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
@@ -238,13 +385,15 @@ export default function HomePage(): React.JSX.Element {
             <div className="flex gap-2">
               <button
                 onClick={handleImport}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-xs font-semibold transition-colors"
+                disabled={busyAction !== null}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/60 disabled:cursor-wait rounded-lg text-white text-xs font-semibold transition-colors"
               >
                 📂 Import file
               </button>
               <button
                 onClick={handleChooseFolder}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 text-xs font-semibold transition-colors"
+                disabled={busyAction !== null}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700/60 disabled:cursor-wait rounded-lg text-slate-200 text-xs font-semibold transition-colors"
               >
                 🗂 Chọn thư mục
               </button>
@@ -262,7 +411,7 @@ export default function HomePage(): React.JSX.Element {
               <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2 px-6 text-center">
                 <span className="text-4xl">🎵</span>
                 <p className="text-sm">Import file MIDI hoặc chọn thư mục để bắt đầu</p>
-                <p className="text-xs">Hỗ trợ kéo thả vào cửa sổ</p>
+                <p className="text-xs">Hoặc kéo thả file .mid / .midi vào đây</p>
               </div>
             ) : (
               <ul className="py-1">
@@ -274,19 +423,27 @@ export default function HomePage(): React.JSX.Element {
                     <li key={entry.path}>
                       <div
                         className={[
-                          'px-4 py-2.5 cursor-pointer transition-all duration-100 border-l-2',
-                          isHovered
-                            ? 'bg-slate-800 border-blue-500'
-                            : 'border-transparent hover:bg-slate-800/50 hover:border-slate-600'
+                          'px-4 py-2.5 cursor-pointer transition-colors duration-100 border-l-2 relative overflow-hidden',
+                          isLoading
+                            ? 'bg-blue-900/25 border-blue-500'
+                            : isHovered
+                              ? 'bg-slate-800 border-blue-500'
+                              : 'border-transparent hover:bg-slate-800/50 hover:border-slate-600'
                         ].join(' ')}
                         onMouseEnter={() => setHoveredPath(entry.path)}
                         onMouseLeave={() => setHoveredPath(null)}
                         onClick={() => !isLoading && handleSelectFile(entry)}
                       >
+                        {/* Row content — fixed-height single line so the list
+                            never reflows when an entry switches into loading. */}
                         <div className="flex items-center gap-2 min-w-0">
-                          {/* Icon or music bars */}
-                          <div className="flex-shrink-0 w-5 flex items-center justify-center">
-                            {isHovered ? <MusicBars /> : <span className="text-sm">🎵</span>}
+                          {/* Icon: spinner when loading, music bars on hover, note otherwise */}
+                          <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                            {isLoading
+                              ? <span className="inline-block w-3.5 h-3.5 border-2 border-blue-300/40 border-t-blue-400 rounded-full animate-spin" />
+                              : isHovered
+                                ? <MusicBars />
+                                : <span className="text-sm">🎵</span>}
                           </div>
 
                           {/* Name */}
@@ -294,19 +451,46 @@ export default function HomePage(): React.JSX.Element {
                             {entry.name}
                           </span>
 
-                          {/* Duration / loading indicator */}
-                          <span className="text-xs text-slate-500 font-mono flex-shrink-0 ml-1">
-                            {isLoading
-                              ? <span className="animate-spin inline-block">⟳</span>
-                              : formatDur(entry.duration)}
+                          {/* Right-side meta: duration normally, "Đang tải" while loading.
+                              Both occupy the same slot so the row's width stays stable. */}
+                          <span className={[
+                            'text-xs font-mono flex-shrink-0 ml-1 tabular-nums',
+                            isLoading ? 'text-blue-300' : 'text-slate-500',
+                          ].join(' ')}>
+                            {isLoading ? 'Đang tải' : formatDur(entry.duration)}
                           </span>
                         </div>
+
+                        {/* Indeterminate progress bar pinned to the row's bottom edge.
+                            Absolute → does not contribute to row height. */}
+                        {isLoading && (
+                          <div className="absolute left-0 right-0 bottom-0 h-[2px] overflow-hidden bg-blue-900/30">
+                            <div className="h-full w-1/3 bg-blue-400/90 rounded-full animate-[loadingbar_1.2s_ease-in-out_infinite]" />
+                          </div>
+                        )}
                       </div>
                     </li>
                   )
                 })}
               </ul>
             )}
+          </div>
+
+          {/* Drag-drop overlay ─────────────────────────────────────────────
+              Pointer-events:none so it doesn't intercept the drop event
+              itself (the aside handles the drop).  Just visual feedback. */}
+          <div
+            className={[
+              'absolute inset-2 rounded-xl border-2 border-dashed pointer-events-none',
+              'flex flex-col items-center justify-center gap-2',
+              'bg-blue-900/30 backdrop-blur-sm border-blue-400/80',
+              'transition-opacity duration-150',
+              isDragging ? 'opacity-100' : 'opacity-0',
+            ].join(' ')}
+          >
+            <span className="text-4xl">🎵</span>
+            <p className="text-blue-200 text-sm font-medium">Thả file MIDI vào đây</p>
+            <p className="text-blue-300/70 text-xs">.mid hoặc .midi</p>
           </div>
         </aside>
       </div>

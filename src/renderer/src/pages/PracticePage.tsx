@@ -2,7 +2,7 @@ import React, {
   useState, useEffect, useRef, useCallback, useMemo
 } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAppContext } from '../context/AppContext'
+import { useAppContext, modePrefsKey } from '../context/AppContext'
 import { audioEngine } from '../audio/AudioEngine'
 import { useAudioEngine } from '../hooks/useAudioEngine'
 import { useMIDIDevice } from '../hooks/useMIDIDevice'
@@ -817,10 +817,10 @@ export default function PracticePage(): React.JSX.Element {
     // Commit new mode — isViewMode, activeHands, scheduleAudio all update via re-render
     setMode(newMode)
 
-    // Restore toggle state for this mode if it has been touched before, else
-    // fall back to defaults.  Matches the home-page → practice rule: each mode
-    // has its own UI prefs; you don't carry over toggles from another mode.
-    const np = modePrefs[newMode]
+    // Restore toggle state for this (song, mode) pair if it has been touched
+    // before, else fall back to defaults.  Matches the home-page → practice
+    // rule: each (song, mode) pair has its own prefs.
+    const np = midiFile ? modePrefs[modePrefsKey(midiFile.name, newMode)] : undefined
     setShowSheetMusic(np?.showSheetMusic ?? false)
     setShowFallingNotes(np?.showFallingNotes ?? true)
 
@@ -867,11 +867,12 @@ export default function PracticePage(): React.JSX.Element {
     })
   }, [])
 
-  // Per-mode UI toggles.  The state is restored from AppContext.modePrefs[mode]
-  // when the same mode is re-entered (from "Tiếp tục" or re-selecting that
-  // mode on the mode page) — and falls back to defaults for a different mode.
-  // This is per-session only; it does not persist across app restarts.
-  const initialPrefs = practiceSettings ? modePrefs[practiceSettings.mode] : undefined
+  // Per-(song, mode) UI toggles.  Scoped this tight so a freshly imported
+  // song doesn't inherit the previous song's sheet-on choice — each
+  // (song, mode) pair has its own state.  Session-only; not persisted.
+  const initialPrefs = (practiceSettings && midiFile)
+    ? modePrefs[modePrefsKey(midiFile.name, practiceSettings.mode)]
+    : undefined
   const [showSheetMusic, setShowSheetMusic] = useState(
     () => initialPrefs?.showSheetMusic ?? false
   )
@@ -914,19 +915,19 @@ export default function PracticePage(): React.JSX.Element {
     pendingSwapRef.current = () => {
       setShowSheetMusic((v) => {
         const next = !v
-        setModePrefs(mode, { showSheetMusic: next })
+        if (midiFile) setModePrefs(modePrefsKey(midiFile.name, mode), { showSheetMusic: next })
         return next
       })
     }
     setSwapPhase('leaving')
-  }, [swapPhase, mode, setModePrefs])
+  }, [swapPhase, mode, midiFile, setModePrefs])
   const handleFallingNotesToggle = useCallback(() => {
     setShowFallingNotes(v => {
       const next = !v
-      setModePrefs(mode, { showFallingNotes: next })
+      if (midiFile) setModePrefs(modePrefsKey(midiFile.name, mode), { showFallingNotes: next })
       return next
     })
-  }, [mode, setModePrefs])
+  }, [mode, midiFile, setModePrefs])
 
   const handleBack = useCallback(() => {
     setResumePoint({ time: currentTimeRef.current, mode })
@@ -1067,6 +1068,16 @@ export default function PracticePage(): React.JSX.Element {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Decorative separator between content and keyboard.
+            • A 1px hairline gradient (the "string" itself)
+            • A short downward glow that fades into the keyboard's top edge
+          Together they read as a stage rim where the falling notes land,
+          without taking visible vertical space (height 0, glow projected down). */}
+      <div className="relative h-0 pointer-events-none select-none z-10">
+        <div className="absolute inset-x-0 -top-px h-px bg-gradient-to-r from-transparent via-blue-400/70 to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-3 bg-gradient-to-b from-blue-500/25 via-blue-500/5 to-transparent" />
       </div>
 
       <PianoKeyboard

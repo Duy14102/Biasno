@@ -46,6 +46,23 @@ function formatDur(s?: number): string {
   return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`
 }
 
+// ─── Source icons ────────────────────────────────────────────────────────────
+function FolderIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+      <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+    </svg>
+  )
+}
+function ImportIcon(): React.JSX.Element {
+  // Down-arrow into a tray — reads as "imported from elsewhere".
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+    </svg>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function HomePage(): React.JSX.Element {
   const navigate = useNavigate()
@@ -57,12 +74,24 @@ export default function HomePage(): React.JSX.Element {
 
   const { loadState } = useAudioEngine()
 
-  const [loadingFile, setLoadingFile] = useState<string | null>(null)
+  // Loading set rather than a single path: when the user picks a folder we
+  // parse each scanned file in parallel and want EVERY row to show its own
+  // spinner until its duration is filled in.
+  const [loadingFiles, setLoadingFiles] = useState<Set<string>>(() => new Set())
+  const addLoading = useCallback((path: string) => {
+    setLoadingFiles((prev) => { const next = new Set(prev); next.add(path); return next })
+  }, [])
+  const removeLoading = useCallback((path: string) => {
+    setLoadingFiles((prev) => { const next = new Set(prev); next.delete(path); return next })
+  }, [])
+
   const [error, setError]             = useState<string | null>(null)
   const [hoveredPath, setHoveredPath] = useState<string | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
-  // Spinner on the import / folder buttons while their dialogs + I/O run.
+  // Disables the import / folder buttons while their dialogs + immediate I/O run.
   const [busyAction, setBusyAction]   = useState<'import' | 'folder' | null>(null)
+  // Entry pending a delete confirmation — null = modal hidden.
+  const [pendingDelete, setPendingDelete] = useState<FileEntry | null>(null)
 
   // ─── MIDI device ──────────────────────────────────────────────────────────
   const { supported: midiSupported, devices, connectedId, connect, error: midiError } =
@@ -73,7 +102,7 @@ export default function HomePage(): React.JSX.Element {
 
   // ─── Select file → navigate ───────────────────────────────────────────────
   const handleSelectFile = useCallback(async (entry: FileEntry) => {
-    setLoadingFile(entry.path)
+    addLoading(entry.path)
     setError(null)
     try {
       const buffer = await window.electronAPI.readMidiFile(entry.path)
@@ -89,9 +118,9 @@ export default function HomePage(): React.JSX.Element {
     } catch (e) {
       setError(`Lỗi: ${e instanceof Error ? e.message : 'Unknown'}`)
     } finally {
-      setLoadingFile(null)
+      removeLoading(entry.path)
     }
-  }, [setMidiFile, navigate])
+  }, [setMidiFile, navigate, addLoading, removeLoading])
 
   // ─── Import single file via dialog ────────────────────────────────────────
   // Adds the row to the list IMMEDIATELY with a loading indicator so the user
@@ -106,11 +135,11 @@ export default function HomePage(): React.JSX.Element {
     if (!result) return
 
     // 1) Show the row right away so the user sees something happen.
-    const placeholder: FileEntry = { name: result.name, path: result.path, duration: undefined }
+    const placeholder: FileEntry = { name: result.name, path: result.path, duration: undefined, source: 'import' }
     updateFileList((prev) =>
       prev.some((f) => f.path === result.path) ? prev : [placeholder, ...prev]
     )
-    setLoadingFile(result.path)
+    addLoading(result.path)
 
     // 2) Yield one frame so the placeholder row + spinner actually paints
     //    before we block the main thread parsing the MIDI buffer.  Without
@@ -134,35 +163,89 @@ export default function HomePage(): React.JSX.Element {
       setError(`Không đọc được file: ${e instanceof Error ? e.message : ''}`)
       updateFileList((prev) => prev.filter((f) => f.path !== result.path))
     } finally {
-      setLoadingFile(null)
+      removeLoading(result.path)
     }
-  }, [updateFileList])
+  }, [updateFileList, addLoading, removeLoading])
+
+  // ─── Delete entry (memory only, never touches disk) ───────────────────────
+  const confirmDelete = useCallback(() => {
+    if (!pendingDelete) return
+    const path = pendingDelete.path
+    updateFileList((prev) => prev.filter((f) => f.path !== path))
+    setPendingDelete(null)
+  }, [pendingDelete, updateFileList])
 
   // ─── Choose folder ────────────────────────────────────────────────────────
-  // Spinner on the button covers both the native folder-pick dialog and the
-  // subsequent fs scan — the user gets continuous feedback from click to
-  // entries appearing.
+  // After the user picks a folder we add every scanned MIDI as a placeholder
+  // row in the list, mark each as loading, then parse them one by one.
+  // Sequential (not parallel) parsing gives a visible "moving" spinner
+  // pattern down the list — each file's spinner clears in turn — instead of
+  // a brief simultaneous flash that disappears too fast to register.
+  //
+  // Files from previous folders are kept; each entry remembers its source
+  // folder in `folderPath` so multi-folder libraries coexist.
   const handleChooseFolder = useCallback(async () => {
     setError(null)
     setBusyAction('folder')
-    try {
-      const folder = await window.electronAPI.openFolder()
-      if (!folder) return
-      setFolderPath(folder)
-      const refs = await window.electronAPI.scanMidiFolder(folder)
-      updateFileList((prev) => {
-        // Keep manually imported files not in this folder; merge folder files
-        const folderEntries: FileEntry[] = refs.map((r) => {
-          const existing = prev.find((f) => f.path === r.path)
-          return { name: r.name, path: r.path, duration: existing?.duration }
-        })
-        const manual = prev.filter((f) => !refs.some((r) => r.path === f.path))
-        return [...manual, ...folderEntries]
+    let folder: string | null
+    try { folder = await window.electronAPI.openFolder() }
+    finally { setBusyAction(null) }
+    if (!folder) return
+
+    setFolderPath(folder)
+    const refs = await window.electronAPI.scanMidiFolder(folder)
+    if (refs.length === 0) return
+
+    // 1) Mark every scanned file as loading UP FRONT — synchronous loop, so
+    //    the loading set is populated before any await yields control.
+    //    Important: don't rely on inferring "new files" inside the
+    //    updateFileList updater — React may run that updater later in a
+    //    batch, and reading the result back synchronously sees stale data.
+    for (const r of refs) addLoading(r.path)
+
+    // 2) Add placeholders to the file list.  Preserve known durations so a
+    //    re-scan doesn't visibly "un-fill" rows we already have data for.
+    updateFileList((prev) => {
+      const folderEntries: FileEntry[] = refs.map((r) => {
+        const existing = prev.find((f) => f.path === r.path)
+        return {
+          name:       r.name,
+          path:       r.path,
+          duration:   existing?.duration,
+          source:     'folder',
+          folderPath: folder!,
+        }
       })
-    } finally {
-      setBusyAction(null)
+      // Keep entries that are NOT in this folder (other folders + imports).
+      const others = prev.filter((f) => !refs.some((r) => r.path === f.path))
+      return [...others, ...folderEntries]
+    })
+
+    // 3) Yield so placeholders + spinners paint before parsing blocks.
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+
+    // 4) For each file: parse → fill duration → preload sheet → clear spinner.
+    //    Same flow as import / drag-drop, just for every file the folder gave
+    //    us.  Sequential so the OSMD renders don't all pile on the main thread
+    //    at once.  Each row's spinner stays put until its sheet is ready —
+    //    when it clears, clicking that row navigates instantly.
+    for (const r of refs) {
+      try {
+        const buf = await window.electronAPI.readMidiFile(r.path)
+        if (!buf) continue
+        const data = await parseMidiBuffer(buf, r.name)
+        if (data.notes.length === 0) continue
+        updateFileList((prev) => prev.map((f) =>
+          f.path === r.path ? { ...f, duration: data.duration } : f
+        ))
+        await preloadSheet(data)
+      } catch (err) {
+        console.warn('[folder parse]', r.path, err)
+      } finally {
+        removeLoading(r.path)
+      }
     }
-  }, [updateFileList, setFolderPath])
+  }, [updateFileList, setFolderPath, addLoading, removeLoading])
 
   // ─── Drag-drop ────────────────────────────────────────────────────────────
   // Window-level listeners detect ANY file being dragged over the app — that
@@ -237,21 +320,23 @@ export default function HomePage(): React.JSX.Element {
       let absPath = file.name
       try { absPath = window.electronAPI.getPathForFile(file) || file.name } catch { /* fall back */ }
       const name = file.name.replace(/\.(mid|midi)$/i, '')
-      const placeholder: FileEntry = { name, path: absPath, duration: undefined }
+      const placeholder: FileEntry = { name, path: absPath, duration: undefined, source: 'import' }
       updateFileList((prev) =>
         prev.some((f) => f.path === absPath) ? prev : [placeholder, ...prev]
       )
+      addLoading(absPath)
       queued.push({ file, path: absPath, name })
     }
 
     // Yield so the placeholders paint before we begin the parse loop.
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
 
-    let firstNew: { entry: FileEntry; data: Awaited<ReturnType<typeof parseMidiBuffer>> } | null = null
     const failed: string[] = []
 
+    // For each dropped file: parse → fill duration → preload sheet → clear
+    // spinner.  All files get their sheets pre-rendered (not just the first)
+    // so clicking any of them on the home page navigates instantly.
     for (const item of queued) {
-      setLoadingFile(item.path)
       try {
         const buf  = await item.file.arrayBuffer()
         const data = await parseMidiBuffer(buf, item.name)
@@ -264,27 +349,20 @@ export default function HomePage(): React.JSX.Element {
         updateFileList((prev) => prev.map((f) =>
           f.path === item.path ? { ...f, duration: data.duration } : f
         ))
-        if (!firstNew) firstNew = { entry: { name: item.name, path: item.path, duration: data.duration }, data }
+        await preloadSheet(data)
       } catch (err) {
         failed.push(item.file.name)
         updateFileList((prev) => prev.filter((f) => f.path !== item.path))
         console.error('[drop parse]', err)
+      } finally {
+        removeLoading(item.path)
       }
-    }
-
-    if (firstNew) {
-      // Keep the loading indicator on the first file while preloading.
-      setLoadingFile(firstNew.entry.path)
-      try { await preloadSheet(firstNew.data) }
-      finally { setLoadingFile(null) }
-    } else {
-      setLoadingFile(null)
     }
 
     if (failed.length) {
       setError(`Không đọc được: ${failed.join(', ')}`)
     }
-  }, [updateFileList])
+  }, [updateFileList, addLoading, removeLoading])
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-white">
@@ -416,14 +494,15 @@ export default function HomePage(): React.JSX.Element {
             ) : (
               <ul className="py-1">
                 {fileList.map((entry) => {
-                  const isLoading = loadingFile === entry.path
+                  const isLoading = loadingFiles.has(entry.path)
                   const isHovered = hoveredPath === entry.path
 
+                  const isFolder = entry.source === 'folder'
                   return (
                     <li key={entry.path}>
                       <div
                         className={[
-                          'px-4 py-2.5 cursor-pointer transition-colors duration-100 border-l-2 relative overflow-hidden',
+                          'group px-4 py-2.5 cursor-pointer transition-colors duration-100 border-l-2 relative overflow-hidden',
                           isLoading
                             ? 'bg-blue-900/25 border-blue-500'
                             : isHovered
@@ -437,28 +516,58 @@ export default function HomePage(): React.JSX.Element {
                         {/* Row content — fixed-height single line so the list
                             never reflows when an entry switches into loading. */}
                         <div className="flex items-center gap-2 min-w-0">
-                          {/* Icon: spinner when loading, music bars on hover, note otherwise */}
-                          <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                          {/* Leading icon: spinner when loading, music bars on hover,
+                              source-tagged SVG otherwise (folder vs import).
+                              The folder tooltip shows the exact source folder
+                              so multi-folder libraries are distinguishable. */}
+                          <div
+                            className={[
+                              'flex-shrink-0 w-5 h-5 flex items-center justify-center',
+                              isFolder ? 'text-amber-400/90' : 'text-blue-400/90',
+                            ].join(' ')}
+                            title={isFolder
+                              ? (entry.folderPath ? `Từ thư mục: ${entry.folderPath}` : 'Từ thư mục')
+                              : 'File đã import'}
+                          >
                             {isLoading
                               ? <span className="inline-block w-3.5 h-3.5 border-2 border-blue-300/40 border-t-blue-400 rounded-full animate-spin" />
                               : isHovered
                                 ? <MusicBars />
-                                : <span className="text-sm">🎵</span>}
+                                : (isFolder ? <FolderIcon /> : <ImportIcon />)}
                           </div>
 
-                          {/* Name */}
+                          {/* Name — the source folder (if any) is shown via
+                              the leading icon's tooltip, so the row stays
+                              uncluttered on a single line. */}
                           <span className="flex-1 text-sm text-slate-200 truncate font-medium min-w-0">
                             {entry.name}
                           </span>
 
-                          {/* Right-side meta: duration normally, "Đang tải" while loading.
-                              Both occupy the same slot so the row's width stays stable. */}
-                          <span className={[
-                            'text-xs font-mono flex-shrink-0 ml-1 tabular-nums',
-                            isLoading ? 'text-blue-300' : 'text-slate-500',
-                          ].join(' ')}>
-                            {isLoading ? 'Đang tải' : formatDur(entry.duration)}
-                          </span>
+                          {/* Right-side meta: duration normally, "Đang tải" while loading,
+                              swapped for a delete (×) button on hover when idle. */}
+                          {isLoading ? (
+                            <span className="text-xs font-mono flex-shrink-0 ml-1 tabular-nums text-blue-300">
+                              Đang tải
+                            </span>
+                          ) : isHovered ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()   // don't trigger row click → load
+                                setPendingDelete(entry)
+                              }}
+                              title="Xóa khỏi danh sách"
+                              className="flex-shrink-0 ml-1 w-5 h-5 flex items-center justify-center rounded-md text-slate-400 hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                            >
+                              <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                              </svg>
+                            </button>
+                          ) : (
+                            <span className="text-xs font-mono flex-shrink-0 ml-1 tabular-nums text-slate-500">
+                              {formatDur(entry.duration)}
+                            </span>
+                          )}
                         </div>
 
                         {/* Indeterminate progress bar pinned to the row's bottom edge.
@@ -494,11 +603,123 @@ export default function HomePage(): React.JSX.Element {
           </div>
         </aside>
       </div>
+
+      {/* Delete-confirm modal ────────────────────────────────────────────────
+          Two flavours depending on entry.source:
+            • import: file was added one-off → just forget it.
+            • folder: file came from a scanned folder → forgetting still leaves
+                      it on disk (and a re-scan would re-add it).
+          The dialog body spells that out so the user knows we're not deleting
+          their actual file. */}
+      {pendingDelete && (
+        <DeleteConfirmModal
+          entry={pendingDelete}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
     </div>
   )
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+function DeleteConfirmModal({
+  entry, onCancel, onConfirm
+}: {
+  entry: FileEntry
+  onCancel: () => void
+  onConfirm: () => void
+}): React.JSX.Element {
+  const isFolder = entry.source === 'folder'
+
+  // Close on Escape for keyboard users.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-[420px] max-w-[92vw] rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden"
+        style={{ animation: 'fadeInUp 180ms cubic-bezier(0.16, 1, 0.3, 1) both' }}
+      >
+        <style>{`@keyframes fadeInUp {
+          0% { opacity: 0; transform: translateY(12px) scale(0.96); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }`}</style>
+
+        {/* Header — icon + title differ by source. */}
+        <div className="flex items-start gap-3 px-5 pt-5">
+          <div className={[
+            'w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0',
+            isFolder ? 'bg-amber-500/15 text-amber-300' : 'bg-blue-500/15 text-blue-300',
+          ].join(' ')}>
+            {isFolder ? '🗂' : '📥'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-semibold text-base leading-snug">
+              Xóa khỏi danh sách?
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5 truncate" title={entry.name}>
+              {entry.name}
+            </p>
+          </div>
+        </div>
+
+        {/* Body — explains the consequence for each source. */}
+        <div className="px-5 py-4 text-sm text-slate-300 leading-relaxed">
+          {isFolder ? (
+            <>
+              <p>
+                Bài này thuộc <span className="text-amber-300 font-medium">thư mục đã chọn</span>.
+                Xóa chỉ gỡ khỏi danh sách trong Biasno —
+                <span className="text-white font-medium"> file gốc trong thư mục vẫn còn nguyên</span>.
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Lưu ý: nếu bạn quét lại thư mục, bài sẽ xuất hiện trở lại.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                Bài này là <span className="text-blue-300 font-medium">file import</span>.
+                Xóa sẽ gỡ khỏi danh sách trong Biasno —
+                <span className="text-white font-medium"> file trên máy vẫn còn nguyên</span>.
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Bạn có thể import lại bất cứ lúc nào.
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-2 px-5 pb-5">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors"
+          >
+            Hủy
+          </button>
+          <button
+            onClick={onConfirm}
+            autoFocus
+            className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-semibold transition-colors"
+          >
+            Xóa
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DevicePanel({ state }: { state: 'none' | 'unsupported' }): React.JSX.Element {
   return (
     <div className="flex flex-col items-center gap-4 text-center max-w-xs">

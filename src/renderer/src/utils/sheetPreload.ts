@@ -1,37 +1,30 @@
-// ─── Sheet music pre-loader ──────────────────────────────────────────────────
+// ─── Sheet music pre-loader (multi-slot LRU cache) ──────────────────────────
 //
 // OSMD's render() is a synchronous, ~1–2 s main-thread block on long songs.
-// To avoid freezing the UI (and stuttering already-playing audio) the moment
-// the user toggles the sheet inside the practice page, we pre-render the
-// sheet ONCE on the home page right after the user picks a MIDI file — while
-// they're already waiting for navigation anyway.
-//
-// The render is done into a detached, off-screen container that lives in
-// document.body.  When the SheetMusic component later mounts, it pulls the
-// cached container straight into its scroll wrapper — no re-render needed.
+// To avoid freezing the UI the moment the user toggles the sheet inside the
+// practice page, we pre-render the sheet into a detached, off-screen
+// container the moment the user picks / drops / scans a MIDI file.  Multiple
+// sheets coexist in memory (an LRU map) so EVERY file the user added is
+// click-instant on the practice page — not just the most recent one.
 //
 // The sheet is rendered with BOTH hands.  Mode (left/right/both) only affects
 // the interactive parts (falling notes & key feedback); the sheet always
-// shows the full piece so the player keeps musical context.
+// shows the full piece.
 
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 import type { MidiFileData } from '../types'
 import { midiToMusicXml } from './musicXmlBuilder'
 
-// Extra per-render data the SheetMusic component fills in on first attach,
-// so that subsequent toggles (off → on) don't need to re-walk the OSMD tree.
-//   • noteRefs / steps: O(N) tree walks — cached forever per OSMD instance.
-//   • lastStepIdx:      the cursor's current step index.  OSMD keeps the
-//                       cursor's DOM position across detach/attach, so we can
-//                       skip the cursor.reset() + cursor.next() loop that
-//                       would otherwise re-advance from 0 on every remount.
+// Extra per-render data the SheetMusic component fills in on first attach.
+// Cached alongside the OSMD instance so subsequent attaches don't re-walk
+// the tree or reset the cursor from step 0.
 export interface SheetExtras {
   noteRefs:    unknown[]   // typed in SheetMusic.tsx; opaque here
   steps:       number[]
   lastStepIdx: number
 }
 
-interface CachedSheet {
+export interface CachedSheet {
   midiName:  string
   bpm:       number
   container: HTMLDivElement
@@ -39,35 +32,35 @@ interface CachedSheet {
   extras:    SheetExtras | null
 }
 
-let cache: CachedSheet | null = null
-// Monotonic request id used to ignore the result of a stale preload that
-// was superseded by a newer file-pick before it finished rendering.
-let activeReqId = 0
+// Hard cap on how many sheets we keep rendered at once.  Each adds a full
+// SVG subtree to document.body, so we don't want this unbounded.  10 covers
+// a typical practice library while staying well under any reasonable memory
+// budget.  Insertion order is the LRU order; `getCachedSheet` re-inserts on
+// hit to keep "recently used" at the tail.
+const MAX_CACHE = 10
+const cache = new Map<string, CachedSheet>()
+// Dedupe concurrent preloads of the same file (e.g. folder scan kicks one
+// off, then the user clicks the same row before it finishes).  Mapping
+// from key → in-flight promise.
+const inFlight = new Map<string, Promise<boolean>>()
 
-/** Returns the cached sheet if the (name, bpm) match, else null. */
-export function getCachedSheet(midiName: string, bpm: number): CachedSheet | null {
-  if (cache && cache.midiName === midiName && cache.bpm === bpm) return cache
-  return null
+function keyOf(midiName: string, bpm: number): string {
+  return `${midiName}|${bpm}`
 }
 
-/**
- * Pre-render the sheet for the given MIDI file into a detached off-screen
- * container.  Safe to call multiple times — same (name, bpm) is a no-op.
- * Returns true on success.
- */
-export async function preloadSheet(midiFile: MidiFileData): Promise<boolean> {
-  if (cache && cache.midiName === midiFile.name && cache.bpm === midiFile.bpm) return true
+/** Returns the cached sheet for (name, bpm) and bumps its LRU position. */
+export function getCachedSheet(midiName: string, bpm: number): CachedSheet | null {
+  const k = keyOf(midiName, bpm)
+  const entry = cache.get(k)
+  if (!entry) return null
+  // LRU touch — re-insert moves to the tail.
+  cache.delete(k)
+  cache.set(k, entry)
+  return entry
+}
 
-  const reqId = ++activeReqId
-
-  // Drop previous cache (different file or stale)
-  if (cache) {
-    cache.container.remove()
-    cache = null
-  }
-
-  // Hidden off-screen host so the SVG is laid out at real practice-page width
-  // (innerWidth ≈ practice page width since it's full-screen).
+async function doPreload(midiFile: MidiFileData, k: string): Promise<boolean> {
+  // Hidden off-screen host so the SVG lays out at real practice-page width.
   const container = document.createElement('div')
   container.style.position  = 'fixed'
   container.style.left      = '-99999px'
@@ -89,17 +82,30 @@ export async function preloadSheet(midiFile: MidiFileData): Promise<boolean> {
     if (!xml) { container.remove(); return false }
 
     await osmd.load(xml)
-    if (reqId !== activeReqId) { container.remove(); return false }
-
-    // Yield one frame so any UI updates (spinner, etc.) can paint before the
-    // synchronous render() block hits.
+    // Yield one frame so any UI updates around us can paint between the
+    // (sync) load step and the (sync) render step.
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
-    if (reqId !== activeReqId) { container.remove(); return false }
 
     osmd.render()
-    if (reqId !== activeReqId) { container.remove(); return false }
 
-    cache = { midiName: midiFile.name, bpm: midiFile.bpm, container, osmd, extras: null }
+    cache.set(k, { midiName: midiFile.name, bpm: midiFile.bpm, container, osmd, extras: null })
+
+    // LRU evict.  Walk in insertion order (oldest first) and remove the first
+    // entry that is NOT currently attached to a SheetMusic wrapper.  An
+    // attached container's parent is the wrapper div; detached containers
+    // live under <body>.  We never evict an attached entry because that
+    // would yank the SVG out from under the visible sheet.
+    if (cache.size > MAX_CACHE) {
+      for (const [evictKey, entry] of cache) {
+        if (cache.size <= MAX_CACHE) break
+        if (evictKey === k) continue   // never evict the one we just added
+        if (entry.container.parentElement === document.body) {
+          entry.container.remove()
+          cache.delete(evictKey)
+        }
+      }
+    }
+
     return true
   } catch (e) {
     console.error('[sheetPreload]', e)
@@ -109,40 +115,53 @@ export async function preloadSheet(midiFile: MidiFileData): Promise<boolean> {
 }
 
 /**
- * Move the cached container into a visible wrapper.  Returns the container
- * so the caller can read/inspect it; returns null if no cache exists.
- *
- * The container's positioning is reset so it flows naturally inside `wrapper`.
+ * Pre-render the sheet for the given MIDI file.  Idempotent on already-cached
+ * files; deduplicates concurrent calls for the same file.  Returns true on
+ * success.
  */
-export function attachCachedTo(wrapper: HTMLElement): CachedSheet | null {
-  if (!cache) return null
-  cache.container.style.position = 'relative'
-  cache.container.style.left     = ''
-  cache.container.style.top      = ''
-  cache.container.style.width    = ''      // let parent control width
-  wrapper.appendChild(cache.container)
-  return cache
+export async function preloadSheet(midiFile: MidiFileData): Promise<boolean> {
+  const k = keyOf(midiFile.name, midiFile.bpm)
+  if (cache.has(k)) return true
+  const existing = inFlight.get(k)
+  if (existing) return existing
+  const p = doPreload(midiFile, k).finally(() => inFlight.delete(k))
+  inFlight.set(k, p)
+  return p
 }
 
 /**
- * Move the cached container back to body (off-screen) so it survives the
- * caller's React unmount.  No-op if cache is empty or container was already
- * relocated externally.
+ * Move the cached container for (midiName, bpm) into a visible wrapper.
+ * Returns the cache entry, or null if there's nothing cached for that file.
  */
-export function detachCachedToStorage(): void {
-  if (!cache) return
-  cache.container.style.position  = 'fixed'
-  cache.container.style.left      = '-99999px'
-  cache.container.style.top       = '0'
-  cache.container.style.width     = window.innerWidth + 'px'
-  document.body.appendChild(cache.container)
+export function attachCachedTo(midiName: string, bpm: number, wrapper: HTMLElement): CachedSheet | null {
+  const entry = getCachedSheet(midiName, bpm)
+  if (!entry) return null
+  entry.container.style.position = 'relative'
+  entry.container.style.left     = ''
+  entry.container.style.top      = ''
+  entry.container.style.width    = ''     // let parent control width
+  wrapper.appendChild(entry.container)
+  return entry
 }
 
-/** Throw away any cached sheet.  Call when the file selection is reset. */
+/**
+ * Move the cached container for (midiName, bpm) back to body (off-screen) so
+ * it survives the caller's React unmount.  Cache entry stays — it's just
+ * detached from the visible DOM.  No-op if the file isn't cached.
+ */
+export function detachCachedToStorage(midiName: string, bpm: number): void {
+  const entry = cache.get(keyOf(midiName, bpm))
+  if (!entry) return
+  entry.container.style.position  = 'fixed'
+  entry.container.style.left      = '-99999px'
+  entry.container.style.top       = '0'
+  entry.container.style.width     = window.innerWidth + 'px'
+  document.body.appendChild(entry.container)
+}
+
+/** Throw away every cached sheet.  Used when resetting the whole library. */
 export function disposeSheetCache(): void {
-  if (cache) {
-    cache.container.remove()
-    cache = null
-  }
-  activeReqId++   // invalidate any in-flight preload
+  for (const entry of cache.values()) entry.container.remove()
+  cache.clear()
+  inFlight.clear()
 }

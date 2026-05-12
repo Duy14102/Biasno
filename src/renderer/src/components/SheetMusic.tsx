@@ -327,7 +327,7 @@ function SheetMusic({
     let cancelled = false
 
     const initFromCache = () => {
-      const cached = attachCachedTo(wrapper)
+      const cached = attachCachedTo(midiFile.name, midiFile.bpm, wrapper)
       if (!cached || cancelled) return false
 
       const osmd = cached.osmd
@@ -416,7 +416,7 @@ function SheetMusic({
       // Move the cached container back to body BEFORE React unmounts our
       // wrapper — otherwise React would tear down our subtree and destroy the
       // pre-rendered SVG along with it.
-      detachCachedToStorage()
+      detachCachedToStorage(midiFile.name, midiFile.bpm)
     }
     // bpm derives from midiFile so it doesn't need to be in deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -560,11 +560,15 @@ function SheetMusic({
     // Outer wrapper: fills the layout slot, provides positioning context for the
     // floating lock button (position:relative).
     <div className="flex-1 min-h-0 relative overflow-hidden">
-      {/* Keyframes + filter rule for the dark-mode toggle. */}
+      {/* Keyframes + filter rule for the dark-mode toggle.  Full invert + hue
+          rotate so blacks become pure white, the white paper becomes a deep
+          slate (not a washed-out grey), and the coloured highlights (blue /
+          orange) stay roughly the same hue.  Contrast (1.05) sharpens the
+          inverted notes a touch so they don't look hazy on the dark bg. */}
       <style>{`
         .sheet-osmd-host { transition: filter 320ms cubic-bezier(0.4, 0, 0.2, 1); }
         .sheet-osmd-host[data-dark="true"] {
-          filter: invert(0.92) hue-rotate(180deg);
+          filter: invert(1) hue-rotate(180deg) contrast(1.05);
         }
         @keyframes themeIconIn {
           0%   { opacity: 0; transform: rotate(-90deg) scale(0.6); }
@@ -586,7 +590,7 @@ function SheetMusic({
         ref={scrollRef}
         className={[
           'absolute inset-0 overflow-y-auto overflow-x-hidden transition-colors duration-300',
-          darkSheet ? 'bg-slate-900' : 'bg-white',
+          darkSheet ? 'bg-[#0b1220]' : 'bg-white',
         ].join(' ')}
       >
         {/* Wrapper: the pre-rendered OSMD container (from sheetPreload) is

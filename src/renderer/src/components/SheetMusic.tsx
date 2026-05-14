@@ -637,11 +637,14 @@ function SheetMusic({
         className={[
           'absolute top-3 right-3 z-20',
           'w-8 h-8 rounded-full flex items-center justify-center',
-          'shadow-md backdrop-blur-sm',
-          'transition-all duration-200 select-none',
+          'shadow-md backdrop-blur-sm ring-1',
+          'transition-[background-color,color,box-shadow,border-color] duration-150 select-none',
+          // No transform-based hover — text/icon glyphs in nearby DOM (the OSMD
+          // sheet) re-rasterise during the scale tween and look briefly blurry.
+          // We feed back via background/colour + a subtle outer ring instead.
           autoScroll
-            ? 'bg-blue-500/80 text-white hover:bg-blue-600/90 hover:scale-110'
-            : 'bg-white/70 text-slate-400 border border-slate-200/60 hover:bg-white/90 hover:text-slate-600 hover:scale-110',
+            ? 'bg-blue-500/80 text-white ring-blue-300/30 hover:bg-blue-600 hover:ring-blue-300/60 hover:shadow-blue-500/40'
+            : 'bg-white/70 text-slate-400 border border-slate-200/60 ring-transparent hover:bg-white hover:text-slate-600 hover:ring-slate-300/60',
         ].join(' ')}
       >
         {autoScroll ? <LockClosedIcon /> : <LockOpenIcon />}
@@ -658,11 +661,11 @@ function SheetMusic({
         className={[
           'absolute top-[3.25rem] right-3 z-20',
           'w-8 h-8 rounded-full flex items-center justify-center',
-          'shadow-md backdrop-blur-sm',
-          'transition-all duration-300 select-none',
+          'shadow-md backdrop-blur-sm ring-1',
+          'transition-[background-color,color,box-shadow,border-color] duration-200 select-none',
           darkSheet
-            ? 'bg-slate-700/80 text-yellow-200 hover:bg-slate-700/95 hover:scale-110'
-            : 'bg-white/70 text-slate-600 border border-slate-200/60 hover:bg-white/90 hover:text-slate-800 hover:scale-110',
+            ? 'bg-slate-700/85 text-yellow-200 ring-yellow-300/20 hover:bg-slate-700 hover:ring-yellow-300/50'
+            : 'bg-white/70 text-slate-600 border border-slate-200/60 ring-transparent hover:bg-white hover:text-slate-800 hover:ring-slate-300/60',
         ].join(' ')}
       >
         <span key={darkSheet ? 'moon' : 'sun'} className="theme-icon-in inline-flex">

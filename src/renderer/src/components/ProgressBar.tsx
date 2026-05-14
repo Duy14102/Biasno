@@ -36,6 +36,10 @@ export default function ProgressBar({
   const barRef        = useRef<HTMLDivElement>(null)
   const [dragMode, setDragMode]   = useState<DragMode>(null)
   const [hovering, setHovering]   = useState(false)
+  // Live cursor-x fraction (0–1) while the mouse is over the bar — drives the
+  // floating time tooltip.  Null when the cursor is elsewhere so the tooltip
+  // disappears cleanly.
+  const [hoverFrac, setHoverFrac] = useState<number | null>(null)
   const dragStartX    = useRef(0)
   const dragStartLoop = useRef<LoopRegion | null>(null)
 
@@ -106,34 +110,39 @@ export default function ProgressBar({
     <>
       <style>{ANIM_CSS}</style>
       <div
-        className="flex items-center gap-3 px-4 bg-slate-900 border-b border-slate-700 select-none"
-        style={{ height: 52 }}
+        className="flex items-center gap-3 px-4 bg-gradient-to-b from-slate-900 to-slate-950 border-b border-slate-700/60 select-none"
+        style={{ height: 48 }}
       >
-        {/* Current time */}
-        <span className="text-sm font-mono text-slate-200 w-12 text-right shrink-0">
+        {/* Current time — slightly larger / brighter so it pops against the
+            track. Tabular-nums keeps the digits from jitterring as time ticks. */}
+        <span className="text-sm font-mono font-semibold text-slate-100 tabular-nums w-12 text-right shrink-0">
           {formatTime(currentTime)}
         </span>
 
         {/* ── Track ─────────────────────────────────────────────────────── */}
         <div
           ref={barRef}
-          className="relative flex-1 rounded-full cursor-pointer"
-          style={{ height: 14 }}
+          className="relative flex-1 rounded-full cursor-pointer group"
+          style={{ height: 10 }}
           onMouseDown={handleMouseDown}
           onMouseEnter={() => setHovering(true)}
-          onMouseLeave={() => setHovering(false)}
+          onMouseLeave={() => { setHovering(false); setHoverFrac(null) }}
+          onMouseMove={(e) => { if (!isDragging) setHoverFrac(xToFraction(e.clientX)) }}
         >
-          {/* Background track */}
+          {/* Background track — inset shadow gives a subtle "groove" feel. */}
           <div
             className="absolute inset-0 rounded-full transition-colors duration-150"
-            style={{ background: active ? '#334155' : '#1e293b' }}
+            style={{
+              background: active ? '#334155' : '#1e293b',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.45)',
+            }}
           />
 
           {/* Loop region */}
           {loopRegion && (
             <>
               <div
-                className="absolute top-0 h-full rounded border-l-2 border-r-2 border-amber-400"
+                className="absolute top-0 h-full rounded border-l-2 border-r-2 border-amber-400/90"
                 style={{
                   left:       `${loopRegion.start * 100}%`,
                   width:      `${(loopRegion.end - loopRegion.start) * 100}%`,
@@ -143,7 +152,7 @@ export default function ProgressBar({
               {[loopRegion.start, loopRegion.end].map((pos, i) => (
                 <div
                   key={i}
-                  className="absolute top-1/2 -translate-y-1/2 w-3 h-6 bg-amber-400 rounded-sm cursor-ew-resize"
+                  className="absolute top-1/2 -translate-y-1/2 w-3 h-6 bg-amber-400 rounded-sm cursor-ew-resize shadow-md shadow-amber-500/30"
                   style={{ left: `calc(${pos * 100}% - 6px)`, zIndex: 10 }}
                 />
               ))}
@@ -155,10 +164,10 @@ export default function ProgressBar({
             className="absolute left-0 top-0 h-full rounded-full overflow-hidden transition-none"
             style={{
               width:      `${progress * 100}%`,
-              background: 'linear-gradient(90deg,#2563eb 0%,#3b82f6 60%,#60a5fa 100%)'
+              background: 'linear-gradient(90deg,#2563eb 0%,#3b82f6 60%,#60a5fa 100%)',
+              boxShadow:  progress > 0 ? '0 0 12px rgba(59,130,246,0.4)' : 'none',
             }}
           >
-            {/* Shimmer sweep — only visible when something is playing (progress > 0) */}
             {progress > 0 && (
               <div
                 className="pb-shimmer absolute top-0 bottom-0 w-2/5"
@@ -168,6 +177,14 @@ export default function ProgressBar({
               />
             )}
           </div>
+
+          {/* Hover preview marker — vertical hairline at cursor x. */}
+          {hoverFrac !== null && !isDragging && (
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-px h-5 bg-slate-300/50 pointer-events-none"
+              style={{ left: `${hoverFrac * 100}%` }}
+            />
+          )}
 
           {/* Playhead */}
           <div
@@ -180,10 +197,22 @@ export default function ProgressBar({
               transition: isDragging ? 'none' : 'width 0.12s, height 0.12s'
             }}
           />
+
+          {/* Hover time tooltip — floats above the bar at cursor x. */}
+          {hoverFrac !== null && !isDragging && (
+            <div
+              className="absolute -top-7 pointer-events-none z-20"
+              style={{ left: `${hoverFrac * 100}%`, transform: 'translateX(-50%)' }}
+            >
+              <div className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-600/80 text-[11px] text-slate-100 font-mono tabular-nums shadow-lg whitespace-nowrap">
+                {formatTime(hoverFrac * duration)}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Total time */}
-        <span className="text-sm font-mono text-slate-500 w-12 shrink-0">
+        <span className="text-sm font-mono text-slate-500 tabular-nums w-12 shrink-0">
           {formatTime(duration)}
         </span>
       </div>

@@ -19,6 +19,12 @@ export interface ResumePoint {
   mode: PracticeMode
 }
 
+// Resume points are stored per-song so each MIDI keeps its own bookmark.
+// Switching songs on the home page must never inherit another song's
+// resume time — that was the bug where a 0:27 mark on song A showed up
+// on song B's mode page.
+export type ResumePoints = Partial<Record<string /* midiName */, ResumePoint>>
+
 // UI preferences (sheet / falling-notes visibility) scoped per (song, mode).
 // Key is `${midiName}|${mode}` so each song keeps independent toggle state for
 // each mode — switching to a fresh song / mode falls back to defaults rather
@@ -33,7 +39,7 @@ interface AppState {
   practiceSettings:  PracticeSettings                | null
   fileList:          FileEntry[]
   folderPath:        string                          | null
-  resumePoint:       ResumePoint                     | null
+  resumePoints:      ResumePoints                       // keyed by midi name
   modePrefs:         Partial<Record<string, ModePrefs>>   // keyed by `${midiName}|${mode}`
 }
 
@@ -43,7 +49,7 @@ interface AppContextValue extends AppState {
   setFileList:         (files: FileEntry[])                              => void
   updateFileList:      (fn: (prev: FileEntry[]) => FileEntry[])          => void
   setFolderPath:       (path: string | null)                             => void
-  setResumePoint:      (rp: ResumePoint | null)                          => void
+  setResumePoint:      (midiName: string, rp: ResumePoint | null)        => void
   setModePrefs:        (key: string, prefs: Partial<ModePrefs>)          => void
   clearAll:            ()                                                 => void
 }
@@ -60,11 +66,23 @@ export function AppProvider({ children }: { children: React.ReactNode }): React.
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettings | null>(null)
   const [fileList,         setFileList]         = useState<FileEntry[]>([])
   const [folderPath,       setFolderPath]       = useState<string | null>(null)
-  const [resumePoint,      setResumePoint]      = useState<ResumePoint | null>(null)
-  const [modePrefs,        setAllModePrefs]     = useState<Partial<Record<string, ModePrefs>>>({})
+  const [resumePoints,     setAllResumePoints] = useState<ResumePoints>({})
+  const [modePrefs,        setAllModePrefs]    = useState<Partial<Record<string, ModePrefs>>>({})
 
   const updateFileList = useCallback((fn: (prev: FileEntry[]) => FileEntry[]) => {
     setFileList(fn)
+  }, [])
+
+  // Per-song resume point.  Passing rp=null clears just that song's bookmark
+  // (used right after we consume it on entering practice, or when the user
+  // taps "Bỏ qua" on the mode page).
+  const setResumePoint = useCallback((midiName: string, rp: ResumePoint | null) => {
+    setAllResumePoints((prev) => {
+      const next = { ...prev }
+      if (rp === null) delete next[midiName]
+      else             next[midiName] = rp
+      return next
+    })
   }, [])
 
   const setModePrefs = useCallback((key: string, prefs: Partial<ModePrefs>) => {
@@ -85,7 +103,7 @@ export function AppProvider({ children }: { children: React.ReactNode }): React.
 
   return (
     <AppContext.Provider value={{
-      midiFile, practiceSettings, fileList, folderPath, resumePoint, modePrefs,
+      midiFile, practiceSettings, fileList, folderPath, resumePoints, modePrefs,
       setMidiFile, setPracticeSettings, setFileList, updateFileList,
       setFolderPath, setResumePoint, setModePrefs, clearAll
     }}>

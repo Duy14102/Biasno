@@ -93,7 +93,21 @@ const MODE_FLASH_STYLE = `
 // longer a concern here because the sheet is pre-rendered on the home page.
 const LOOKAHEAD_REAL_MS = 300
 const NOTE_LOOK_AHEAD_S = 4.5   // must match FallingNotes PX_PER_SECOND / visible window
-const LOOP_RESET_AFTER  = 0.3   // seconds past song end before seamless reset
+// Trigger the seamless loop the instant currentTime crosses the song end.
+// Any positive offset here would mean the new cycle starts at `offset` seconds
+// past time 0 — and any note whose start falls inside that offset window
+// would be marked "missed" by the scheduler (delaySong < -0.15) and never
+// played, so the song would loop with its first few notes silent.
+const LOOP_RESET_AFTER  = 0
+
+// "Ready" pause we ADD before the first note of the song / loop iteration
+// when the MIDI doesn't already have at least this much silence at the top.
+// MIDIs exported from notation software typically start at time 0 with no
+// pickup, which means the first downbeat lands the instant playback begins
+// — too sudden for a learner.  We compute leadIn = max(0, LEAD_IN_TARGET -
+// firstNoteTime) per song, so a piece that already has, say, a 3 s intro
+// gets no extra padding; one that opens dry gets ~1.25 s of breathing room.
+const LEAD_IN_TARGET    = 1.25
 
 interface NoteState {
   note: MidiNote
@@ -112,10 +126,20 @@ function findBestResumeTime(notes: MidiNote[], t: number): number {
 
 export default function PracticePage(): React.JSX.Element {
   const navigate = useNavigate()
-  const { practiceSettings, resumePoint, setResumePoint, modePrefs, setModePrefs } = useAppContext()
+  const { practiceSettings, resumePoints, setResumePoint, modePrefs, setModePrefs } = useAppContext()
   useAudioEngine()
 
   const midiFile = practiceSettings?.midiFile ?? null
+
+  // How many seconds of silent "ready" we add at the very start of the song
+  // and at every loop wrap.  Zero for songs whose first note is already at
+  // least LEAD_IN_TARGET seconds in — those have their own intro and don't
+  // need padding.  Notes are sorted by time inside parseMidiBuffer, so notes[0]
+  // is the earliest.
+  const leadIn = useMemo(() => {
+    if (!midiFile || midiFile.notes.length === 0) return 0
+    return Math.max(0, LEAD_IN_TARGET - midiFile.notes[0].time)
+  }, [midiFile])
 
   // ─── ALL HOOKS FIRST ──────────────────────────────────────────────────────
   // Mode as local state so it can be changed mid-session without navigating back
@@ -185,9 +209,14 @@ export default function PracticePage(): React.JSX.Element {
       map.set(n.id, { note: n, visual: 'pending', flashAlpha: 0, scheduled: false })
     })
     setNoteStates(map)
-    setCurrentTime(0)
-    currentTimeRef.current = 0
-  }, [midiFile])
+    // Start at -leadIn so the playhead has a silent "ready" runway before the
+    // first note.  ProgressBar clamps the displayed value to ≥ 0 so the user
+    // sees "0:00" during the runway; FallingNotes / SheetMusic treat negative
+    // time as "before the song" naturally (notes still off-stage, cursor at
+    // the very start).
+    setCurrentTime(-leadIn)
+    currentTimeRef.current = -leadIn
+  }, [midiFile, leadIn])
 
   // ─── Visible notes ─────────────────────────────────────────────────────────
   const visibleNotes = useMemo(() => {
@@ -206,13 +235,26 @@ export default function PracticePage(): React.JSX.Element {
       return { note, state: ns?.visual ?? 'pending', flashAlpha: ns?.flashAlpha ?? 0 }
     })
 
-    // Seamless loop preview: when approaching song end, pre-render next-cycle notes
-    // above the screen with time offset by +duration. Their pixel positions are
-    // identical to what they'll be after the reset, so the transition is invisible.
+    // Seamless loop preview: when approaching song end, pre-render next-cycle
+    // notes above the screen with their time offset by (duration + leadIn) so
+    // their pixel positions line up perfectly with the real notes once the
+    // wrap fires.
+    //
+    // Why duration + leadIn (not just duration):
+    //   • Without leadIn: wrap takes currentTime from `duration` → `0`.
+    //     Preview note position at currentTime=duration  = (T + duration - duration) * pps = T * pps
+    //     Real    note position at currentTime=0          = T * pps                          ✓
+    //   • With leadIn:   wrap takes currentTime from `duration` → `-leadIn`.
+    //     Preview note position at currentTime=duration  = (T + duration + leadIn - duration) * pps = (T + leadIn) * pps
+    //     Real    note position at currentTime=-leadIn   = (T - (-leadIn)) * pps             = (T + leadIn) * pps  ✓
+    //
+    // So the preview notes descend continuously into the leadIn runway, no
+    // empty gap and no "jerk" at the wrap moment.
     if (midiFile && currentTime > midiFile.duration - NOTE_LOOK_AHEAD_S) {
+      const offset = midiFile.duration + leadIn
       visibleNotes.forEach((note) => {
         result.push({
-          note: { ...note, id: note.id + '_next', time: note.time + midiFile.duration },
+          note: { ...note, id: note.id + '_next', time: note.time + offset },
           state: 'pending',
           flashAlpha: 0,
         })
@@ -220,7 +262,7 @@ export default function PracticePage(): React.JSX.Element {
     }
 
     return result
-  }, [visibleNotes, noteStates, currentTime, midiFile])
+  }, [visibleNotes, noteStates, currentTime, midiFile, leadIn])
 
   // ─── Flash ────────────────────────────────────────────────────────────────
   const triggerFlash = useCallback((noteId: string, state: 'hit' | 'missed') => {
@@ -350,30 +392,31 @@ export default function PracticePage(): React.JSX.Element {
         }
       }
 
-      // Seamless loop: when LOOP_RESET_AFTER seconds past song end, subtract
-      // duration from currentTime. Preview notes (rendered with +duration offset)
-      // become the real notes at identical pixel positions → zero visual jump.
+      // End of song reached → wrap to the start of the next iteration.
+      // newTime is -leadIn (negative) when the song doesn't have a natural
+      // intro, so the user gets a brief "ready" pause before the first note
+      // plays again.  For songs that DO have their own intro, leadIn = 0 and
+      // we wrap straight to time 0, preserving the seamless-loop preview.
       if (currentTimeRef.current >= midiFile.duration + LOOP_RESET_AFTER) {
-        const newTime = currentTimeRef.current - midiFile.duration
+        const newTime = -leadIn
         currentTimeRef.current = newTime
         lastRAFTime.current = 0
         viewActiveRef.current = ''
         pressedMidi.current.clear()
         holdingRef.current.clear()
         setActiveKeys(new Map())
-        // Reset note states relative to the new time position
+        // Reset EVERY note to pending so the new cycle re-schedules from the
+        // top.  The old cycle's previously-scheduled audio is queued in Tone.js
+        // and decays naturally; the scheduler's per-note range filters
+        // (delaySong / lookahead) keep us from re-attacking notes that are
+        // far in the future of newTime, so flattening everything here is
+        // both safe and the only reliable way to make sure the first beat
+        // plays again — the previous 3-branch reset left near-time-0 notes
+        // stuck on `scheduled: true, visual: 'hit'` from the last cycle.
         setNoteStates((prev) => {
           const next = new Map(prev)
           next.forEach((ns, id) => {
-            const noteEnd = ns.note.time + ns.note.duration
-            if (ns.note.time > newTime + 0.05) {
-              // Future note — reset to pending
-              next.set(id, { ...ns, scheduled: false, visual: 'pending', flashAlpha: 0 })
-            } else if (noteEnd < newTime - 0.05) {
-              // Already passed — mark as hit
-              next.set(id, { ...ns, scheduled: true, visual: 'hit', flashAlpha: 0 })
-            }
-            // else: currently playing — leave scheduled, audio naturally decays
+            next.set(id, { ...ns, scheduled: false, visual: 'pending', flashAlpha: 0 })
           })
           noteStatesRef.current = next
           return next
@@ -449,7 +492,7 @@ export default function PracticePage(): React.JSX.Element {
       lastRAFTime.current = 0
     }
     rafId.current = requestAnimationFrame(raf)
-  }, [midiFile, isViewMode])
+  }, [midiFile, isViewMode, leadIn])
 
   useEffect(() => {
     rafId.current = requestAnimationFrame(raf)
@@ -464,7 +507,17 @@ export default function PracticePage(): React.JSX.Element {
   // ─── Seek ─────────────────────────────────────────────────────────────────
   const seek = useCallback((time: number) => {
     const dur = midiFile?.duration ?? 0
-    const t = Math.max(0, Math.min(dur, time))
+    // Seeking to the start of the song is treated as "restart from the
+    // top" — the user gets the same leadIn ready pause as the initial play.
+    // This covers:
+    //   • dragging the progress bar all the way to the leftmost pixel
+    //   • the rewind button when it clamps a negative target to 0
+    //   • internal callers (handleRestart) passing -leadIn directly
+    // Any positive target lands exactly where the user pointed — no leadIn
+    // when they're just scrubbing inside the song.
+    const t = time <= 0
+      ? -leadIn
+      : Math.min(dur, time)
     currentTimeRef.current = t
     setCurrentTime(t)
     lastRAFTime.current = 0
@@ -532,11 +585,13 @@ export default function PracticePage(): React.JSX.Element {
   useEffect(() => {
     if (!midiFile) return
 
-    // Apply resume point if present (seek before starting)
-    if (resumePoint && resumePoint.mode === mode) {
-      const t = findBestResumeTime(midiFile.notes, resumePoint.time)
+    // Apply resume point if present — scoped per song so the bookmark from
+    // a different MIDI doesn't leak in.
+    const rp = resumePoints[midiFile.name]
+    if (rp && rp.mode === mode) {
+      const t = findBestResumeTime(midiFile.notes, rp.time)
       seek(t)
-      setResumePoint(null)
+      setResumePoint(midiFile.name, null)
     }
 
     if (countdownEnabledRef.current) {
@@ -672,7 +727,13 @@ export default function PracticePage(): React.JSX.Element {
   }, [handleNoteInput])
 
   // ─── Transport handlers ───────────────────────────────────────────────────
-  const handleRestart     = useCallback(() => { stop(); play() }, [stop, play])
+  // Restart from the leadIn runway, not from raw 0 — gives the user the same
+  // "ready" pause the natural-loop wrap does.
+  const handleRestart     = useCallback(() => {
+    pause()
+    seek(-leadIn)
+    play()
+  }, [pause, seek, play, leadIn])
   const handlePlayPause   = useCallback(() => { isPlaying ? pause() : play() }, [isPlaying, play, pause])
   const handleRewind      = useCallback(() => {
     const dur = midiFile?.duration ?? 0
@@ -930,11 +991,11 @@ export default function PracticePage(): React.JSX.Element {
   }, [mode, midiFile, setModePrefs])
 
   const handleBack = useCallback(() => {
-    setResumePoint({ time: currentTimeRef.current, mode })
+    if (midiFile) setResumePoint(midiFile.name, { time: currentTimeRef.current, mode })
     stop()
     audioEngine.stopMetronome()
     navigate('/mode')
-  }, [stop, navigate, mode, setResumePoint])
+  }, [stop, navigate, mode, midiFile, setResumePoint])
 
   // Cleanup
   useEffect(() => () => {
@@ -988,7 +1049,10 @@ export default function PracticePage(): React.JSX.Element {
 
       <ProgressBar
         duration={midiFile.duration}
-        currentTime={currentTime}
+        // Clamp to ≥ 0 so the bar reads "0:00" / empty fill during the leadIn
+        // runway — the user perceives "the song is paused at the very start"
+        // rather than a negative time.
+        currentTime={Math.max(0, currentTime)}
         loopRegion={loopRegion}
         onSeek={seek}
         onLoopChange={handleLoopChange}

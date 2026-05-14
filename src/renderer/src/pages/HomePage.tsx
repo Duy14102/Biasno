@@ -365,21 +365,49 @@ export default function HomePage(): React.JSX.Element {
   }, [updateFileList, addLoading, removeLoading])
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-white">
+    <div className="flex flex-col h-screen bg-slate-950 text-white relative overflow-hidden">
       {/* Inject keyframes once */}
       <style>{BAR_STYLE}</style>
 
+      {/* Decorative background orbs — soft radial gradients far in the
+          corners so the page doesn't feel flat / empty without files.  Set
+          `pointer-events: none` so they don't intercept drag-drop or clicks. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 -left-40 w-[40rem] h-[40rem] rounded-full opacity-40 blur-3xl"
+        style={{ background: 'radial-gradient(circle at center, rgba(59,130,246,0.25), transparent 60%)' }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-40 -right-20 w-[34rem] h-[34rem] rounded-full opacity-30 blur-3xl"
+        style={{ background: 'radial-gradient(circle at center, rgba(139,92,246,0.22), transparent 60%)' }}
+      />
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="flex items-center gap-3 px-5 py-3 bg-slate-900 border-b border-slate-700/60">
-        <span className="text-2xl">🎹</span>
-        <h1 className="text-xl font-bold tracking-wide text-white">Biasno</h1>
+      <header className="relative flex items-center gap-3 px-5 py-3 bg-gradient-to-b from-slate-800/95 to-slate-900/95 backdrop-blur-sm border-b border-slate-700/70 shadow-sm z-10">
+        {/* Brand mark — small rounded square with gradient + piano glyph */}
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 via-violet-500 to-fuchsia-500 flex items-center justify-center text-base shadow-lg shadow-blue-500/30 ring-1 ring-white/10">
+            🎹
+          </div>
+          <div className="flex flex-col leading-tight">
+            <h1 className="text-lg font-bold tracking-tight text-white">Biasno</h1>
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-medium">
+              Học piano qua MIDI
+            </p>
+          </div>
+        </div>
+
         <div className="flex-1" />
+
+        {/* Audio engine status — only surfaced when NOT ready (ready state is
+            the silent default). */}
         {loadState !== 'ready' && (
           <span className={[
-            'text-xs px-2 py-1 rounded-md',
+            'text-xs px-2.5 py-1 rounded-full font-medium border',
             loadState === 'loading'
-              ? 'bg-yellow-900/40 text-yellow-300 border border-yellow-700/50'
-              : 'bg-red-900/40 text-red-300 border border-red-700/50'
+              ? 'bg-yellow-900/40 text-yellow-300 border-yellow-700/50'
+              : 'bg-red-900/40 text-red-300 border-red-700/50'
           ].join(' ')}>
             {loadState === 'loading' ? '⏳ Đang tải âm thanh...' : '⚠ Lỗi âm thanh'}
           </span>
@@ -387,62 +415,80 @@ export default function HomePage(): React.JSX.Element {
       </header>
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden z-10">
 
-        {/* ── CENTER: MIDI device ──────────────────────────────────────────── */}
-        <main className="flex-1 flex flex-col items-center justify-center p-8 border-r border-slate-800">
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-6">
-            Đàn điện / MIDI
-          </h2>
+        {/* ── CENTER: MIDI device + keyboard tip ───────────────────────────── */}
+        <main className="flex-1 flex flex-col items-center justify-center px-8 py-6 overflow-y-auto">
+          <div className="w-full max-w-md flex flex-col gap-5">
 
-          {!midiSupported ? (
-            <DevicePanel state="unsupported" />
-          ) : devices.length === 0 ? (
-            <DevicePanel state="none" />
-          ) : (
-            <div className="w-full max-w-sm flex flex-col gap-3">
-              {devices.map((dev) => {
-                const isConn = connectedId === dev.id
-                return (
-                  <button
-                    key={dev.id}
-                    onClick={() => connect(isConn ? '__none__' : dev.id)}
-                    className={[
-                      'w-full flex items-center gap-4 p-4 rounded-xl border transition-all duration-150',
-                      isConn
-                        ? 'bg-blue-600/20 border-blue-500/50 text-white'
-                        : 'bg-slate-800/60 border-slate-700/50 text-slate-300 hover:bg-slate-800 hover:border-slate-600'
-                    ].join(' ')}
-                  >
-                    <div className={[
-                      'w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0',
-                      isConn ? 'bg-blue-600' : 'bg-slate-700'
-                    ].join(' ')}>
-                      🎹
-                    </div>
-                    <div className="text-left flex-1 min-w-0">
-                      <p className="font-semibold truncate">{dev.name}</p>
-                      <p className={['text-xs mt-0.5', isConn ? 'text-blue-300' : 'text-slate-500'].join(' ')}>
-                        {isConn ? '🔗 Đã kết nối — nhấn để ngắt' : 'MIDI Input — nhấn để kết nối'}
-                      </p>
-                    </div>
-                    <div className={[
-                      'w-2.5 h-2.5 rounded-full flex-shrink-0',
-                      isConn ? 'bg-green-400 shadow-lg shadow-green-500/50' : 'bg-slate-600'
-                    ].join(' ')} />
-                  </button>
-                )
-              })}
+            {/* Section label */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Đàn điện / MIDI
+              </span>
+              <div className="flex-1 h-px bg-slate-700/50" />
             </div>
-          )}
 
-          {midiError && <p className="mt-4 text-xs text-red-400">{midiError}</p>}
+            {/* Device area */}
+            {!midiSupported ? (
+              <DevicePanel state="unsupported" />
+            ) : devices.length === 0 ? (
+              <DevicePanel state="none" />
+            ) : (
+              <div className="w-full flex flex-col gap-2.5">
+                {devices.map((dev) => {
+                  const isConn = connectedId === dev.id
+                  return (
+                    <button
+                      key={dev.id}
+                      onClick={() => connect(isConn ? '__none__' : dev.id)}
+                      className={[
+                        'w-full flex items-center gap-3 p-3.5 rounded-xl border',
+                        'transition-[background-color,border-color,box-shadow] duration-150',
+                        isConn
+                          ? 'bg-blue-600/15 border-blue-500/50 shadow-lg shadow-blue-500/15'
+                          : 'bg-slate-800/60 border-slate-700/50 hover:bg-slate-800 hover:border-slate-600',
+                      ].join(' ')}
+                    >
+                      <div className={[
+                        'w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0',
+                        isConn ? 'bg-blue-600 shadow-md shadow-blue-500/30' : 'bg-slate-700/80',
+                      ].join(' ')}>
+                        🎹
+                      </div>
+                      <div className="text-left flex-1 min-w-0">
+                        <p className={['font-semibold truncate text-sm', isConn ? 'text-white' : 'text-slate-200'].join(' ')}>
+                          {dev.name}
+                        </p>
+                        <p className={['text-xs mt-0.5', isConn ? 'text-blue-300' : 'text-slate-500'].join(' ')}>
+                          {isConn ? 'Đã kết nối — nhấn để ngắt' : 'Nhấn để kết nối'}
+                        </p>
+                      </div>
+                      <div className={[
+                        'w-2.5 h-2.5 rounded-full flex-shrink-0',
+                        isConn ? 'bg-green-400 shadow-lg shadow-green-500/50' : 'bg-slate-600',
+                      ].join(' ')} />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
-          {error && (
-            <div className="mt-6 max-w-sm w-full px-4 py-3 bg-red-900/20 border border-red-700/50 rounded-lg text-red-400 text-sm">
-              {error}
-            </div>
-          )}
+            {midiError && (
+              <p className="text-xs text-red-400 text-center">{midiError}</p>
+            )}
+
+            {/* Computer keyboard hint — always visible, useful both before
+                you've connected a MIDI device and as a refresher.  Visualised
+                as a mini piano with letter labels on the keys. */}
+            <KeyboardHint />
+
+            {error && (
+              <div className="px-4 py-3 bg-red-900/25 border border-red-700/50 rounded-lg text-red-300 text-sm">
+                {error}
+              </div>
+            )}
+          </div>
         </main>
 
         {/* ── RIGHT: MIDI file list ──────────────────────────────────────────
@@ -451,20 +497,27 @@ export default function HomePage(): React.JSX.Element {
             ANY file enters the app — so the drop zone is visible the moment
             the drag starts, not only once the cursor crosses the aside. */}
         <aside
-          className="w-80 flex flex-col bg-slate-900 overflow-hidden relative"
+          className="w-[22rem] flex flex-col bg-slate-900/80 backdrop-blur-sm border-l border-slate-800 overflow-hidden relative"
           onDragOver={handleDragOver}
           onDrop={handleDrop}
         >
           {/* Panel header */}
-          <div className="px-4 pt-4 pb-3 border-b border-slate-700/60">
-            <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
-              File MIDI
-            </h2>
+          <div className="px-4 pt-4 pb-3 border-b border-slate-700/50 bg-gradient-to-b from-slate-900 to-slate-900/0">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold text-white tracking-wide">
+                Danh sách bài
+              </h2>
+              {fileList.length > 0 && (
+                <span className="text-[10px] font-mono text-slate-500 tabular-nums">
+                  {fileList.length} {fileList.length === 1 ? 'bài' : 'bài'}
+                </span>
+              )}
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handleImport}
                 disabled={busyAction !== null}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/60 disabled:cursor-wait rounded-lg text-white text-xs font-semibold transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/60 disabled:cursor-wait rounded-lg text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-colors"
               >
                 📂 Import file
               </button>
@@ -477,19 +530,24 @@ export default function HomePage(): React.JSX.Element {
               </button>
             </div>
             {folderPath && (
-              <p className="mt-2 text-xs text-slate-500 truncate" title={folderPath}>
-                📁 {folderPath}
-              </p>
+              <div className="mt-2.5 flex items-center gap-1.5 text-xs text-slate-500" title={folderPath}>
+                <span className="text-amber-400/80 shrink-0">📁</span>
+                <span className="truncate">{folderPath}</span>
+              </div>
             )}
           </div>
 
           {/* File list */}
           <div className="flex-1 overflow-y-auto">
             {fileList.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2 px-6 text-center">
-                <span className="text-4xl">🎵</span>
-                <p className="text-sm">Import file MIDI hoặc chọn thư mục để bắt đầu</p>
-                <p className="text-xs">Hoặc kéo thả file .mid / .midi vào đây</p>
+              <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center text-3xl mb-1">
+                  🎵
+                </div>
+                <p className="text-sm text-slate-300 font-medium">Chưa có bài nhạc nào</p>
+                <p className="text-xs text-slate-500 leading-relaxed max-w-[18rem]">
+                  Bấm <span className="text-blue-300 font-medium">Import file</span> hoặc <span className="text-slate-300 font-medium">Chọn thư mục</span> phía trên, hoặc kéo thả file <span className="font-mono text-slate-400">.mid / .midi</span> vào đây.
+                </p>
               </div>
             ) : (
               <ul className="py-1">
@@ -678,8 +736,7 @@ function DeleteConfirmModal({
             <>
               <p>
                 Bài này thuộc <span className="text-amber-300 font-medium">thư mục đã chọn</span>.
-                Xóa chỉ gỡ khỏi danh sách trong Biasno —
-                <span className="text-white font-medium"> file gốc trong thư mục vẫn còn nguyên</span>.
+                Xóa sẽ gỡ khỏi danh sách trong Biasno
               </p>
               <p className="mt-2 text-xs text-slate-500">
                 Lưu ý: nếu bạn quét lại thư mục, bài sẽ xuất hiện trở lại.
@@ -689,8 +746,7 @@ function DeleteConfirmModal({
             <>
               <p>
                 Bài này là <span className="text-blue-300 font-medium">file import</span>.
-                Xóa sẽ gỡ khỏi danh sách trong Biasno —
-                <span className="text-white font-medium"> file trên máy vẫn còn nguyên</span>.
+                Xóa sẽ gỡ khỏi danh sách trong Biasno
               </p>
               <p className="mt-2 text-xs text-slate-500">
                 Bạn có thể import lại bất cứ lúc nào.
@@ -721,20 +777,92 @@ function DeleteConfirmModal({
 }
 
 function DevicePanel({ state }: { state: 'none' | 'unsupported' }): React.JSX.Element {
+  const isUnsupported = state === 'unsupported'
   return (
-    <div className="flex flex-col items-center gap-4 text-center max-w-xs">
-      <div className="w-24 h-24 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-5xl">
-        🎹
+    <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-800/60 border border-slate-700/60">
+      <div className={[
+        'w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ring-1',
+        isUnsupported
+          ? 'bg-red-500/10 text-red-300 ring-red-500/30'
+          : 'bg-slate-700/80 text-slate-300 ring-slate-600/50',
+      ].join(' ')}>
+        {isUnsupported ? '⚠' : '🎹'}
       </div>
-      <div>
-        <p className="font-semibold text-slate-300 mb-1">
-          {state === 'unsupported' ? 'MIDI không khả dụng' : 'Chưa kết nối đàn'}
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-slate-200 text-sm">
+          {isUnsupported ? 'MIDI không khả dụng' : 'Chưa kết nối đàn'}
         </p>
-        <p className="text-sm text-slate-500">
-          {state === 'unsupported'
+        <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+          {isUnsupported
             ? 'Trình duyệt không hỗ trợ Web MIDI API'
-            : 'Cắm đàn qua cổng USB và thử lại. Phím máy tính cũng dùng được (A–J = C4–C5).'}
+            : 'Cắm đàn qua cổng USB rồi thử lại — hoặc dùng phím máy tính bên dưới.'}
         </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Keyboard hint ───────────────────────────────────────────────────────────
+// Mini one-octave piano showing the computer-keyboard mapping (A → ; = C4 →
+// E5).  Lives directly under the device panel as an always-on cheat-sheet so
+// users without a MIDI keyboard can still play without hunting for docs.
+function KeyboardHint(): React.JSX.Element {
+  // 10 white keys spanning C4..E5.  Each row entry is the computer-keyboard
+  // letter that triggers that white key.
+  const whites = ['A','S','D','F','G','H','J','K','L',';']
+  // Black keys, positioned by the index of the white key they sit AFTER.
+  // The gaps (after D, after B, after E) are absent — that's the natural
+  // piano layout.
+  //                                A  S  D  F  G  H  J  K  L  ;
+  //                                C  D  E  F  G  A  B  C  D  E
+  // Black keys exist after:        0  1     3  4  5     7  8       (idx into whites)
+  const blacks: Array<{ letter: string; afterIdx: number }> = [
+    { letter: 'W', afterIdx: 0 },
+    { letter: 'E', afterIdx: 1 },
+    { letter: 'T', afterIdx: 3 },
+    { letter: 'Y', afterIdx: 4 },
+    { letter: 'U', afterIdx: 5 },
+    { letter: 'O', afterIdx: 7 },
+    { letter: 'P', afterIdx: 8 },
+  ]
+  return (
+    <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-3.5">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
+          Phím máy tính
+        </p>
+        <p className="text-[10px] text-slate-500 font-mono">A = C4 · ; = E5</p>
+      </div>
+      {/* Mini piano */}
+      <div className="relative w-full h-16 select-none">
+        {/* White keys */}
+        <div className="absolute inset-0 flex gap-px">
+          {whites.map((letter) => (
+            <div
+              key={letter}
+              className="flex-1 bg-gradient-to-b from-slate-100 to-slate-200 rounded-b-md flex items-end justify-center pb-1 shadow-inner"
+            >
+              <span className="text-slate-700 text-[10px] font-bold leading-none">{letter}</span>
+            </div>
+          ))}
+        </div>
+        {/* Black keys */}
+        <div className="absolute inset-0">
+          {blacks.map(({ letter, afterIdx }) => {
+            // Each white key occupies 10% of the row.  A black key sits over
+            // the boundary between two whites — centre at (afterIdx + 1) * 10%.
+            const leftPct = (afterIdx + 1) * 10
+            return (
+              <div
+                key={letter}
+                className="absolute top-0 h-3/5 w-[5.5%] -translate-x-1/2 bg-gradient-to-b from-slate-900 to-slate-800 rounded-b-md flex items-end justify-center pb-1 z-10 shadow-md"
+                style={{ left: `${leftPct}%` }}
+              >
+                <span className="text-slate-100 text-[9px] font-bold leading-none">{letter}</span>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

@@ -90,24 +90,92 @@ The `clean` step inside `package` kills any running `Biasno.exe` / `app-builder.
 
 ```
 src/
-├── main/            Electron main process — IPC handlers for file dialogs,
-│                    folder scan, MIDI buffer reads.
-├── preload/         contextBridge bridge — exposes window.electronAPI
-│                    (openMidiFile, openFolder, scanMidiFolder, readMidiFile,
-│                    getPathForFile, getDataPath).
-└── renderer/        React app.
-    ├── audio/        AudioEngine (sample loading, scheduler, metronome).
-    ├── components/   SheetMusic, FallingNotes, PianoKeyboard,
-    │                 PracticeHeader, ProgressBar, …
-    ├── context/      AppContext (file list, midiFile, practiceSettings,
-    │                 resumePoint, per-(song, mode) prefs).
-    ├── hooks/        useAudioEngine, useMIDIDevice.
-    ├── pages/        HomePage, ModePage, PracticePage.
-    └── utils/        midiUtils, musicXmlBuilder (MIDI → MusicXML, with
-                      snapDurDown to keep cumulative timing aligned with the
-                      MIDI grid), sheetPreload (multi-slot LRU cache of
-                      pre-rendered OSMD instances), noteUtils.
+├── main/             Electron main process — IPC handlers for file dialogs,
+│                     folder scan, MIDI buffer reads.
+├── preload/          contextBridge — window.electronAPI (openMidiFile,
+│                     openFolder, scanMidiFolder, readMidiFile,
+│                     getPathForFile, getDataPath).
+└── renderer/         React app.
+    ├── App.tsx · main.tsx · index.html · index.css
+    │
+    ├── audio/            AudioEngine — sample loading, scheduling, metronome.
+    │
+    ├── context/          AppContext — file list, midiFile, practiceSettings,
+    │                     resumePoints (per-song), modePrefs (per-(song, mode)).
+    │
+    ├── types/            Shared TypeScript types, split per domain:
+    │   ├── midi.ts         Hand, MidiNote, MidiFileData
+    │   ├── practice.ts     PracticeMode, PracticeSettings
+    │   ├── visual.ts       NoteVisualState, VisualNote, LoopRegion
+    │   ├── device.ts       MidiDevice
+    │   ├── soundfont-player.d.ts
+    │   └── index.ts        barrel re-export
+    │
+    ├── utils/            midiUtils (parse + hand filter), noteUtils (88-key
+    │                     geometry + naming).
+    │
+    ├── hooks/            ONLY cross-feature hooks:
+    │   ├── useAudioEngine.ts
+    │   └── useMIDIDevice.ts
+    │
+    ├── pages/            ONLY the three page entry components:
+    │   ├── HomePage.tsx        layout — consumes useFileLibrary
+    │   ├── ModePage.tsx
+    │   └── PracticePage.tsx    layout — composes the practice/ hooks
+    │
+    ├── practice/         PracticePage's playback engine + internals.
+    │   ├── constants.ts        timing, lookahead, lead-in, transition CSS,
+    │   │                       mode-flash labels
+    │   ├── noteState.ts        NoteState type + findBestResumeTime helper
+    │   ├── useFlashTimer.ts    hit/miss flash interval per note
+    │   ├── usePlayhead.ts      RAF loop: advance time, loop wrap, derive
+    │   │                       note states + active keys
+    │   ├── useTransport.ts     seek / play / pause / restart / rewind / forward
+    │   ├── useModeChange.ts    mid-session mode switch (audio cleanup,
+    │   │                       note-states rebuild, animation, prefs restore)
+    │   ├── useAudioScheduler.ts  25 ms scheduler interval
+    │   ├── usePracticeInput.ts   handleNoteInput + MIDI + computer keyboard
+    │   └── useViewSwap.ts        sheet ↔ falling-notes flip phase machine
+    │
+    └── components/       Reusable UI grouped by feature.
+        ├── ProgressBar.tsx
+        ├── sheet/        SheetMusic + helpers (highlighting, noteRefs,
+        │                 scrollToCursor, musicXmlBuilder, sheetPreload).
+        ├── falling/      FallingNotes (canvas Synthesia view).
+        ├── keyboard/     PianoKeyboard.
+        ├── header/       PracticeHeader split into ModeDropdown,
+        │                 SettingsPanel, IconBtn, ToggleSwitch, plus shared
+        │                 modeGroups / dropdown enter animation.
+        └── library/      HomePage's sub-components + useFileLibrary hook:
+                          FileRow, DevicePanel, KeyboardHint,
+                          DeleteConfirmModal, icons.
 ```
+
+Largest files now (post-refactor — no file >510 lines):
+```
+509  pages/PracticePage.tsx          (was 1163 → 818 → 509; engine extracted
+                                     into 7 hooks under practice/)
+365  components/sheet/SheetMusic.tsx (was 684; helpers split out)
+320  audio/AudioEngine.ts
+303  components/library/useFileLibrary.ts (HomePage's hook)
+301  pages/ModePage.tsx
+267  components/falling/FallingNotes.tsx
+261  pages/HomePage.tsx              (was 869; hook + sub-components extracted)
+239  components/keyboard/PianoKeyboard.tsx
+221  components/ProgressBar.tsx
+200  practice/usePlayhead.ts
+175  components/header/SettingsPanel.tsx
+172  practice/useTransport.ts
+167  components/sheet/sheetPreload.ts
+158  practice/usePracticeInput.ts
+```
+
+Folder placement rules of thumb:
+- `hooks/` — only hooks used by 2+ unrelated callers
+- `practice/` — anything that exists because PracticePage exists
+- `components/<feature>/` — UI + the feature-specific hook (if any), so the
+  feature is self-contained and easy to grep
+- `types/` split per-domain; barrel `index.ts` re-exports for convenience
 
 ---
 

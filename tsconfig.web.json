@@ -11,8 +11,8 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@renderer/*": ["src/renderer/src/*"]
+      "@renderer/*": ["src/renderer/*"]
     }
   },
-  "include": ["src/renderer/src/**/*"]
+  "include": ["src/renderer/**/*"]
 }

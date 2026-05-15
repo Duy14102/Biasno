@@ -1,15 +1,45 @@
 import React, { useMemo, useCallback } from 'react'
 import {
   PIANO_MIN, PIANO_MAX, TOTAL_WHITE_KEYS,
-  isBlackKey, getWhiteKeyIndex, getBlackKeyFraction
-} from '../utils/noteUtils'
-import type { Hand } from '../types'
+  isBlackKey, getWhiteKeyIndex, getBlackKeyFraction,
+} from '../../utils/noteUtils'
+import type { Hand } from '../../types'
 
 const WHITE_NOTE_NAMES = ['C','','D','','E','F','','G','','A','','B']
 
+// Keyframes for the per-onset flash overlay.  Each time a key receives a new
+// note onset, a fresh overlay element mounts (keyed by the note's start time)
+// and runs this animation from 0 → peak → 0, giving the visual a "tap" on
+// every press — including rapid repeats of the same MIDI number where the
+// underlying background colour wouldn't otherwise change.
+//
+// Shape: 0 % → 20 % builds up to peak (≈ 36 ms of the 180 ms animation),
+// then 20 % → 100 % decays.  In view-listen mode the parent component sets
+// the key active ~30 ms before the audio onset (FLASH_ANTICIPATE_S in
+// practice/constants), so the peak frame coincides with the moment the
+// falling note touches the keyboard — no perceived "delay".
+const KB_FLASH_CSS = `
+@keyframes kb-flash-white {
+  0%   { opacity: 0;    }
+  20%  { opacity: 0.7;  }
+  100% { opacity: 0;    }
+}
+@keyframes kb-flash-black {
+  0%   { opacity: 0;    }
+  20%  { opacity: 0.6;  }
+  100% { opacity: 0;    }
+}
+.kb-flash-white { animation: kb-flash-white 180ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.kb-flash-black { animation: kb-flash-black 180ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+`
+
 interface KeyHighlight {
-  hand: Hand
+  hand:      Hand
   hitState?: 'correct' | 'wrong'
+  // Onset timestamp (seconds in song time, view-listen mode) — used purely
+  // as a React `key` for the flash overlay so it remounts and re-runs the
+  // animation on every distinct onset, even when MIDI number stays the same.
+  time?:     number
 }
 
 interface PianoKeyboardProps {
@@ -59,6 +89,8 @@ export default function PianoKeyboard({
       style={{ position: 'relative', width: '100%', height, flexShrink: 0, userSelect: 'none' }}
       className="bg-zinc-900"
     >
+      <style>{KB_FLASH_CSS}</style>
+
       {/* White keys */}
       {whiteKeys.map((midi) => {
         const idx      = getWhiteKeyIndex(midi)
@@ -95,6 +127,26 @@ export default function PianoKeyboard({
                 : 'inset 0 -5px 0 rgba(0,0,0,0.12), 1px 0 0 rgba(0,0,0,0.05)'
             }}
           >
+            {/* Per-onset flash: white overlay that fades out in 150 ms.
+                Keyed by hl.time so a new onset (same MIDI, new time) forces
+                React to remount the element, restarting the animation.  This
+                is what gives rapid repeated notes a visible "tap" rhythm
+                instead of looking like one continuous press. */}
+            {isActive && (
+              <span
+                key={hl?.time ?? 'p'}
+                className="kb-flash-white"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: '#ffffff',
+                  borderRadius: '0 0 5px 5px',
+                  pointerEvents: 'none',
+                  zIndex: 3,
+                }}
+              />
+            )}
+
             {/* Note name label at bottom of each white key */}
             {noteName && (
               <span style={{
@@ -172,7 +224,22 @@ export default function PianoKeyboard({
                 ? `0 0 8px 2px ${color}66`
                 : '2px 5px 10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.08)'
             }}
-          />
+          >
+            {/* Per-onset flash overlay — same trick as the white keys. */}
+            {isActive && (
+              <span
+                key={hl?.time ?? 'p'}
+                className="kb-flash-black"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: '#ffffff',
+                  borderRadius: '0 0 4px 4px',
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
+          </div>
         )
       })}
     </div>

@@ -103,6 +103,12 @@ src/
     │
     ├── context/          AppContext — file list, midiFile, practiceSettings,
     │                     resumePoints (per-song), modePrefs (per-(song, mode)).
+    │                     ThemeContext — dark / light, persisted to localStorage.
+    │
+    ├── i18n/             LanguageContext + flat-dictionary `t(key, params)`.
+    │                     Per-language strings live in `locales/<code>.ts`;
+    │                     add a language by creating that file and registering
+    │                     it in `translations.ts` (Lang / LANGUAGES / DICTIONARIES).
     │
     ├── types/            Shared TypeScript types, split per domain:
     │   ├── midi.ts         Hand, MidiNote, MidiFileData
@@ -139,6 +145,9 @@ src/
     │   └── useViewSwap.ts        sheet ↔ falling-notes flip phase machine
     │
     └── components/       Reusable UI grouped by feature.
+        ├── AudioGate.tsx     splash screen that blocks the app until the
+        │                     soundfont finishes loading.
+        ├── LanguageToggle.tsx · ThemeToggle.tsx
         ├── ProgressBar.tsx
         ├── sheet/        SheetMusic + helpers (highlighting, noteRefs,
         │                 scrollToCursor, musicXmlBuilder, sheetPreload).

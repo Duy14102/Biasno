@@ -53,6 +53,10 @@ export const en: Translations = {
   cancel:                 'Cancel',
   deleteAction:           'Delete',
 
+  folderConflictTitle:    'Add previously removed songs back?',
+  folderConflictDesc:     'This folder contains {n} song(s) you previously removed from the list. Continuing will add them back.',
+  folderConflictAdd:      'Add back',
+
   back:                   'Back',
   continueFromLabel:      'Continue from ',
   continueAction:         'Continue',

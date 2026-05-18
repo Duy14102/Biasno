@@ -48,6 +48,24 @@ function keyOf(midiName: string, bpm: number): string {
   return `${midiName}|${bpm}`
 }
 
+/** True if ANY cached sheet matches this midiName (any bpm). */
+export function hasCachedSheetByName(midiName: string): boolean {
+  for (const entry of cache.values()) {
+    if (entry.midiName === midiName) return true
+  }
+  return false
+}
+
+/** Drop every cached sheet for this midiName.  Used when the user deletes a
+ *  file from the library so its rendered SVG doesn't leak in memory. */
+export function evictSheetByName(midiName: string): void {
+  for (const [key, entry] of cache) {
+    if (entry.midiName !== midiName) continue
+    entry.container.remove()
+    cache.delete(key)
+  }
+}
+
 /** Returns the cached sheet for (name, bpm) and bumps its LRU position. */
 export function getCachedSheet(midiName: string, bpm: number): CachedSheet | null {
   const k = keyOf(midiName, bpm)

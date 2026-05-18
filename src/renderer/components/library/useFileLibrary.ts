@@ -11,17 +11,23 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { parseMidiBuffer } from '../../utils/midiUtils'
-import { preloadSheet } from '../sheet/sheetPreload'
+import { preloadSheet, hasCachedSheetByName, evictSheetByName } from '../sheet/sheetPreload'
 import { useAppContext, type FileEntry } from '../../context/AppContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 
+export interface FolderConflict {
+  folder:    string
+  conflicts: Array<{ name: string; path: string }>
+}
+
 export interface UseFileLibrary {
   // Reactive state
-  loadingFiles:   Set<string>
-  error:          string | null
-  busyAction:     'import' | 'folder' | null
-  isDragging:     boolean
-  pendingDelete:  FileEntry | null
+  loadingFiles:          Set<string>
+  error:                 string | null
+  busyAction:            'import' | 'folder' | null
+  isDragging:            boolean
+  pendingDelete:         FileEntry | null
+  pendingFolderConflict: FolderConflict | null
 
   // Handlers
   selectFile:     (entry: FileEntry) => Promise<void>
@@ -34,11 +40,18 @@ export interface UseFileLibrary {
   requestDelete:  (entry: FileEntry) => void
   cancelDelete:   () => void
   confirmDelete:  () => void
+
+  // Folder-conflict plumbing
+  cancelFolderAdd:  () => void
+  confirmFolderAdd: () => void
 }
 
 export function useFileLibrary(): UseFileLibrary {
   const navigate = useNavigate()
-  const { setMidiFile, updateFileList, setFolderPath, folderPath } = useAppContext()
+  const {
+    setMidiFile, updateFileList, setFolderPath, folderPath,
+    hiddenPaths, addHiddenPath, removeHiddenPath,
+  } = useAppContext()
   const { t } = useLanguage()
 
   // Loading set rather than a single path — folder picks parse multiple files
@@ -55,6 +68,8 @@ export function useFileLibrary(): UseFileLibrary {
   const [busyAction, setBusyAction]       = useState<'import' | 'folder' | null>(null)
   const [isDragging, setIsDragging]       = useState(false)
   const [pendingDelete, setPendingDelete] = useState<FileEntry | null>(null)
+  const [pendingFolderConflict, setPendingFolderConflict] =
+    useState<FolderConflict | null>(null)
 
   // ─── Click a list row → navigate to mode page ───────────────────────────
   const selectFile = useCallback(async (entry: FileEntry) => {
@@ -86,6 +101,9 @@ export function useFileLibrary(): UseFileLibrary {
     finally { setBusyAction(null) }
     if (!result) return
 
+    // Explicit re-add — unhide so syncFolder won't skip this path again.
+    removeHiddenPath(result.path)
+
     // 1) Show the row right away so the user sees feedback.
     const placeholder: FileEntry = {
       name: result.name, path: result.path, duration: undefined, source: 'import',
@@ -116,7 +134,7 @@ export function useFileLibrary(): UseFileLibrary {
     } finally {
       removeLoading(result.path)
     }
-  }, [updateFileList, addLoading, removeLoading, t])
+  }, [updateFileList, addLoading, removeLoading, removeHiddenPath, t])
 
   // ─── Sync a folder's contents into fileList ────────────────────────────
   // Used by chooseFolder, the persisted-folder mount effect, and the live
@@ -126,38 +144,93 @@ export function useFileLibrary(): UseFileLibrary {
   // When the folder is missing (scan returns null) the cached entries are
   // left in place so the library doesn't vanish if a drive is unplugged.
   const syncFolder = useCallback(async (folder: string) => {
-    const refs = await window.electronAPI.scanMidiFolder(folder)
-    if (refs === null) return  // folder gone — preserve persisted entries
+    const refs0 = await window.electronAPI.scanMidiFolder(folder)
+    if (refs0 === null) return  // folder gone — preserve persisted entries
+    // Drop paths the user has explicitly hidden so they don't silently
+    // reappear after restart or after fs.watch picks up the file again.
+    const refs = refs0.filter((r) => !hiddenPaths.has(r.path))
 
     // Compute the "needs parsing" set inside the state updater so we always
     // see the latest fileList; the array is captured into the outer scope
     // for the parse loop that runs after.
     let needsParsing: Array<{ name: string; path: string }> = []
+    // Folder-source entries that disappeared from disk since the last scan
+    // OR whose path was overridden by a newly-picked folder pointing a
+    // matching display-name at a different file.  Cached sheets for these
+    // names must be evicted so the new file gets a fresh preload.
+    let evictNames: string[] = []
 
     updateFileList((prev) => {
+      // Dedup by display name: when the new folder contains a file whose
+      // name already exists in the list, the new folder wins — same single
+      // row, updated to point at the new file.  This keeps the list stable
+      // for the user (no duplicate "123" rows when two folders both have a
+      // 123.mid) while still letting them switch folders freely.
+      const prevByName = new Map<string, FileEntry>()
+      for (const f of prev) prevByName.set(f.name, f)
+      const consumedNames = new Set<string>()
+
       const folderEntries: FileEntry[] = refs.map((r) => {
-        const existing = prev.find((f) => f.path === r.path)
+        const existing = prevByName.get(r.name)
+        if (existing) {
+          consumedNames.add(r.name)
+          // Same file: exact path match OR same folder (a re-pick of the
+          // current folder can yield a slightly different path string in
+          // edge cases — we don't want to wipe the cached duration).
+          if (existing.path === r.path || existing.folderPath === folder) {
+            return { ...existing, path: r.path, source: 'folder', folderPath: folder }
+          }
+          // Different folder, same name: it's a different file; cached
+          // sheet/duration belong to the old file and must be discarded.
+          evictNames.push(r.name)
+        }
         return {
           name:       r.name,
           path:       r.path,
-          duration:   existing?.duration,
+          duration:   undefined,
           source:     'folder',
           folderPath: folder,
         }
       })
-      // Keep entries NOT in the scan, EXCEPT folder-sourced entries that
-      // belonged to this folder — those are stale (file was deleted) and
-      // must be dropped.  Entries from other folders / imports are kept.
+
+      // Keep prev entries that weren't consumed by name, EXCEPT stale folder
+      // entries belonging to THIS folder (file deleted from disk).  Entries
+      // from other folders / imports are kept — list is additive across
+      // folder picks.
       const others = prev.filter((f) => {
-        if (refs.some((r) => r.path === f.path))                          return false
-        if (f.source === 'folder' && f.folderPath === folder)             return false
+        if (consumedNames.has(f.name))                            return false
+        if (f.source === 'folder' && f.folderPath === folder)     return false
         return true
       })
-      needsParsing = folderEntries
-        .filter((e) => e.duration === undefined)
+
+      for (const f of prev) {
+        if (f.source === 'folder' &&
+            f.folderPath === folder &&
+            !refs.some((r) => r.path === f.path)) {
+          evictNames.push(f.name)
+        }
+      }
+
+      // Re-parse:
+      //  - current-folder entries when duration is missing (fresh entry /
+      //    overridden by a different file) OR when the sheet isn't cached
+      //    (app reopened — duration persists via localStorage but the OSMD
+      //    cache does not).
+      //  - other-folder / import entries when duration is missing.  Without
+      //    this, an entry that lost its duration in a prior sync would stay
+      //    blank forever, since later folder picks only touch the current
+      //    folder's rows.  Sheet cache is left alone for cross-folder rows.
+      const currentFolderParsing = folderEntries
+        .filter((e) => e.duration === undefined || !hasCachedSheetByName(e.name))
         .map((e) => ({ name: e.name, path: e.path }))
+      const otherParsing = others
+        .filter((f) => f.duration === undefined)
+        .map((f) => ({ name: f.name, path: f.path }))
+      needsParsing = [...currentFolderParsing, ...otherParsing]
       return [...others, ...folderEntries]
     })
+
+    for (const name of evictNames) evictSheetByName(name)
 
     if (needsParsing.length === 0) return
 
@@ -180,9 +253,19 @@ export function useFileLibrary(): UseFileLibrary {
         removeLoading(r.path)
       }
     }
-  }, [updateFileList, addLoading, removeLoading])
+  }, [updateFileList, addLoading, removeLoading, hiddenPaths])
+
+  // Apply a folder selection: same-folder re-pick triggers a manual sync,
+  // different folder lets the useEffect below scan + watch.
+  const applyFolder = useCallback((folder: string) => {
+    if (folder === folderPath) syncFolder(folder)
+    else                       setFolderPath(folder)
+  }, [folderPath, syncFolder, setFolderPath])
 
   // ─── Choose-folder button → set path → effect handles scan + watch ──────
+  // Pre-scan the picked folder so we can warn before re-adding files the
+  // user previously removed.  Without this check, every file in the folder
+  // gets silently filtered by hiddenPaths and the list looks broken.
   const chooseFolder = useCallback(async () => {
     setError(null)
     setBusyAction('folder')
@@ -191,12 +274,27 @@ export function useFileLibrary(): UseFileLibrary {
     finally { setBusyAction(null) }
     if (!folder) return
 
-    // If user re-picks the SAME folder, the effect below won't re-fire
-    // (folderPath unchanged) — force a manual sync so they still get a
-    // refresh.  Otherwise the effect handles the first scan.
-    if (folder === folderPath) syncFolder(folder)
-    else                       setFolderPath(folder)
-  }, [setFolderPath, folderPath, syncFolder])
+    const refs = await window.electronAPI.scanMidiFolder(folder)
+    if (refs) {
+      const conflicts = refs
+        .filter((r) => hiddenPaths.has(r.path))
+        .map((r) => ({ name: r.name, path: r.path }))
+      if (conflicts.length > 0) {
+        setPendingFolderConflict({ folder, conflicts })
+        return
+      }
+    }
+    applyFolder(folder)
+  }, [hiddenPaths, applyFolder])
+
+  const cancelFolderAdd  = useCallback(() => setPendingFolderConflict(null), [])
+  const confirmFolderAdd = useCallback(() => {
+    if (!pendingFolderConflict) return
+    const { folder, conflicts } = pendingFolderConflict
+    for (const c of conflicts) removeHiddenPath(c.path)
+    applyFolder(folder)
+    setPendingFolderConflict(null)
+  }, [pendingFolderConflict, removeHiddenPath, applyFolder])
 
   // ─── Auto-sync + watch whenever folderPath is set ──────────────────────
   // Fires on mount (covers the persisted-folder rehydration case) and on
@@ -293,6 +391,7 @@ export function useFileLibrary(): UseFileLibrary {
       let absPath = file.name
       try { absPath = window.electronAPI.getPathForFile(file) || file.name } catch { /* fallback */ }
       const name = file.name.replace(/\.(mid|midi)$/i, '')
+      removeHiddenPath(absPath)
       const placeholder: FileEntry = { name, path: absPath, duration: undefined, source: 'import' }
       updateFileList((prev) =>
         prev.some((f) => f.path === absPath) ? prev : [placeholder, ...prev]
@@ -333,21 +432,27 @@ export function useFileLibrary(): UseFileLibrary {
     if (failed.length) {
       setError(t('errFailedToRead', { names: failed.join(', ') }))
     }
-  }, [updateFileList, addLoading, removeLoading, t])
+  }, [updateFileList, addLoading, removeLoading, removeHiddenPath, t])
 
   // ─── Delete plumbing ────────────────────────────────────────────────────
   const requestDelete = useCallback((entry: FileEntry) => setPendingDelete(entry), [])
   const cancelDelete  = useCallback(() => setPendingDelete(null), [])
   const confirmDelete = useCallback(() => {
     if (!pendingDelete) return
-    const path = pendingDelete.path
+    const { path, name } = pendingDelete
     updateFileList((prev) => prev.filter((f) => f.path !== path))
+    // Drop the preloaded SVG so it doesn't leak in memory after the row goes.
+    evictSheetByName(name)
+    // Remember the removal so syncFolder doesn't re-add it after restart
+    // or the next fs.watch ping.
+    addHiddenPath(path)
     setPendingDelete(null)
-  }, [pendingDelete, updateFileList])
+  }, [pendingDelete, updateFileList, addHiddenPath])
 
   return {
-    loadingFiles, error, busyAction, isDragging, pendingDelete,
+    loadingFiles, error, busyAction, isDragging, pendingDelete, pendingFolderConflict,
     selectFile, importFile, chooseFolder, dropFiles, dragOverAside,
     requestDelete, cancelDelete, confirmDelete,
+    cancelFolderAdd, confirmFolderAdd,
   }
 }

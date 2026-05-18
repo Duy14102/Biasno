@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react'
+import React, { useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import type { MidiNote, NoteVisualState } from '../../types'
 import { useTheme } from '../../context/ThemeContext'
 import {
@@ -76,12 +76,19 @@ export default function FallingNotes({
   const themeRef            = useRef(theme)
   const rafRef              = useRef(0)
 
-  useEffect(() => { notesRef.current        = notes },        [notes])
-  useEffect(() => { timeRef.current         = currentTime },  [currentTime])
-  useEffect(() => { practiceModeRef.current = practiceMode }, [practiceMode])
-  useEffect(() => { zoomRef.current         = zoom },         [zoom])
-  useEffect(() => { showLaneLinesRef.current = showLaneLines }, [showLaneLines])
-  useEffect(() => { themeRef.current        = theme },        [theme])
+  // useLayoutEffect (not useEffect) so refs sync synchronously after React
+  // commit, BEFORE the next rAF fires.  After a seek, currentTimeRef is
+  // updated synchronously by the parent and the playhead's RAF derives
+  // activeKeys from it on the very next frame — if timeRef lagged by a frame
+  // (regular useEffect runs after paint), the canvas would draw notes at the
+  // OLD time while the keyboard already highlighted keys for the NEW time,
+  // producing a visible pitch / position mismatch on every FF / rewind tap.
+  useLayoutEffect(() => { notesRef.current        = notes },        [notes])
+  useLayoutEffect(() => { timeRef.current         = currentTime },  [currentTime])
+  useLayoutEffect(() => { practiceModeRef.current = practiceMode }, [practiceMode])
+  useLayoutEffect(() => { zoomRef.current         = zoom },         [zoom])
+  useLayoutEffect(() => { showLaneLinesRef.current = showLaneLines }, [showLaneLines])
+  useLayoutEffect(() => { themeRef.current        = theme },        [theme])
 
   // Resize observer
   useEffect(() => {

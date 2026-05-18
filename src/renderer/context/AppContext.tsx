@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import type { MidiFileData, PracticeSettings, PracticeMode } from '../types'
 
-const LS_FILE_LIST   = 'biasno.fileList'
-const LS_FOLDER_PATH = 'biasno.folderPath'
+const LS_FILE_LIST    = 'biasno.fileList'
+const LS_FOLDER_PATH  = 'biasno.folderPath'
+const LS_HIDDEN_PATHS = 'biasno.hiddenPaths'
 
 function loadFileList(): FileEntry[] {
   try {
@@ -15,6 +16,15 @@ function loadFileList(): FileEntry[] {
 
 function loadFolderPath(): string | null {
   try { return localStorage.getItem(LS_FOLDER_PATH) } catch { return null }
+}
+
+function loadHiddenPaths(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_HIDDEN_PATHS)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? new Set(parsed) : new Set()
+  } catch { return new Set() }
 }
 
 export interface FileEntry {
@@ -55,6 +65,11 @@ interface AppState {
   practiceSettings:  PracticeSettings                | null
   fileList:          FileEntry[]
   folderPath:        string                          | null
+  // Absolute paths of files the user has explicitly removed from the song
+  // list.  syncFolder consults this when scanning a folder so a deleted
+  // file never silently reappears after app reopen / fs.watch ping.  Re-
+  // adding the file via Import / drop unhides it.
+  hiddenPaths:       Set<string>
   resumePoints:      ResumePoints                       // keyed by midi name
   modePrefs:         Partial<Record<string, ModePrefs>>   // keyed by `${midiName}|${mode}`
 }
@@ -65,6 +80,8 @@ interface AppContextValue extends AppState {
   setFileList:         (files: FileEntry[])                              => void
   updateFileList:      (fn: (prev: FileEntry[]) => FileEntry[])          => void
   setFolderPath:       (path: string | null)                             => void
+  addHiddenPath:       (path: string)                                    => void
+  removeHiddenPath:    (path: string)                                    => void
   setResumePoint:      (midiName: string, rp: ResumePoint | null)        => void
   setModePrefs:        (key: string, prefs: Partial<ModePrefs>)          => void
   clearAll:            ()                                                 => void
@@ -82,6 +99,7 @@ export function AppProvider({ children }: { children: React.ReactNode }): React.
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettings | null>(null)
   const [fileList,         setFileList]         = useState<FileEntry[]>(loadFileList)
   const [folderPath,       setFolderPath]       = useState<string | null>(loadFolderPath)
+  const [hiddenPaths,      setHiddenPaths]      = useState<Set<string>>(loadHiddenPaths)
 
   useEffect(() => {
     try { localStorage.setItem(LS_FILE_LIST, JSON.stringify(fileList)) } catch { /* quota */ }
@@ -93,6 +111,25 @@ export function AppProvider({ children }: { children: React.ReactNode }): React.
       else                     localStorage.setItem(LS_FOLDER_PATH, folderPath)
     } catch { /* quota */ }
   }, [folderPath])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_HIDDEN_PATHS, JSON.stringify([...hiddenPaths]))
+    } catch { /* quota */ }
+  }, [hiddenPaths])
+
+  const addHiddenPath = useCallback((path: string) => {
+    setHiddenPaths((prev) => {
+      if (prev.has(path)) return prev
+      const next = new Set(prev); next.add(path); return next
+    })
+  }, [])
+  const removeHiddenPath = useCallback((path: string) => {
+    setHiddenPaths((prev) => {
+      if (!prev.has(path)) return prev
+      const next = new Set(prev); next.delete(path); return next
+    })
+  }, [])
   const [resumePoints,     setAllResumePoints] = useState<ResumePoints>({})
   const [modePrefs,        setAllModePrefs]    = useState<Partial<Record<string, ModePrefs>>>({})
 
@@ -130,9 +167,9 @@ export function AppProvider({ children }: { children: React.ReactNode }): React.
 
   return (
     <AppContext.Provider value={{
-      midiFile, practiceSettings, fileList, folderPath, resumePoints, modePrefs,
+      midiFile, practiceSettings, fileList, folderPath, hiddenPaths, resumePoints, modePrefs,
       setMidiFile, setPracticeSettings, setFileList, updateFileList,
-      setFolderPath, setResumePoint, setModePrefs, clearAll
+      setFolderPath, addHiddenPath, removeHiddenPath, setResumePoint, setModePrefs, clearAll
     }}>
       {children}
     </AppContext.Provider>

@@ -84,7 +84,11 @@ export function usePlayhead({
           setNoteStates((prev) => {
             const next = new Map(prev)
             next.forEach((ns, id) => {
-              if (ns.note.time >= loopStart - 0.01)
+              const noteEnd = ns.note.time + ns.note.duration
+              // Mid-sustain notes that bridge loopStart are reset to 'pending'
+              // (same reasoning as useTransport.seek) so they're re-scheduled
+              // from offset and stay visible in FallingNotes.
+              if (ns.note.time >= loopStart - 0.01 || noteEnd > loopStart + 0.05)
                 next.set(id, { ...ns, scheduled: false, visual: 'pending', flashAlpha: 0 })
               else
                 next.set(id, { ...ns, scheduled: true,  visual: 'hit',     flashAlpha: 0 })

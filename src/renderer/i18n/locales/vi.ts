@@ -57,6 +57,11 @@ export const vi = {
   cancel:                 'Hủy',
   deleteAction:           'Xóa',
 
+  // ── Folder-conflict modal ───────────────────────────────────────────────
+  folderConflictTitle:    'Thêm các bài đã xóa trở lại?',
+  folderConflictDesc:     'Thư mục này chứa {n} bài bạn đã xóa khỏi danh sách trước đây. Tiếp tục sẽ đưa các bài này trở lại.',
+  folderConflictAdd:      'Thêm trở lại',
+
   // ── Mode page ───────────────────────────────────────────────────────────
   back:                   'Quay lại',
   continueFromLabel:      'Tiếp tục từ ',

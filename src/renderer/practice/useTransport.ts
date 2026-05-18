@@ -83,9 +83,20 @@ export function useTransport({
     }
 
     // Update the noteStates ref SYNCHRONOUSLY before scheduleAudio fires.
+    //
+    // Three buckets:
+    //   • Future       (note.time >= t)              — reset to 'pending'
+    //   • Mid-sustain  (started before t, still on)  — also reset to 'pending'
+    //                  so the scheduler can resume audio from an offset AND
+    //                  FallingNotes keeps drawing the bar.  Marking these
+    //                  'hit' (the old behaviour) hid the falling bar while
+    //                  the playhead's activeKeys still lit the key from raw
+    //                  note.time/duration — visible mismatch on every seek.
+    //   • Fully past   (ended before t)              — mark 'hit', scheduled.
     const next = new Map(noteStatesRef.current)
     next.forEach((ns, id) => {
-      if (ns.note.time >= t - 0.01) {
+      const noteEnd = ns.note.time + ns.note.duration
+      if (ns.note.time >= t - 0.01 || noteEnd > t + 0.05) {
         next.set(id, { ...ns, scheduled: false, visual: 'pending', flashAlpha: 0 })
       } else {
         next.set(id, { ...ns, scheduled: true,  visual: 'hit',     flashAlpha: 0 })

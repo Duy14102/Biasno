@@ -7,6 +7,7 @@ import FileRow            from '../components/library/FileRow'
 import DevicePanel        from '../components/library/DevicePanel'
 import KeyboardHint       from '../components/library/KeyboardHint'
 import DeleteConfirmModal from '../components/library/DeleteConfirmModal'
+import FolderConflictModal from '../components/library/FolderConflictModal'
 import LanguageToggle     from '../components/LanguageToggle'
 import ThemeToggle        from '../components/ThemeToggle'
 import { useLanguage }    from '../i18n/LanguageContext'
@@ -252,6 +253,16 @@ export default function HomePage(): React.JSX.Element {
           entry={lib.pendingDelete}
           onCancel={lib.cancelDelete}
           onConfirm={lib.confirmDelete}
+        />
+      )}
+
+      {/* Folder-conflict modal — chosen folder contains previously removed files. */}
+      {lib.pendingFolderConflict && (
+        <FolderConflictModal
+          folder={lib.pendingFolderConflict.folder}
+          conflicts={lib.pendingFolderConflict.conflicts}
+          onCancel={lib.cancelFolderAdd}
+          onConfirm={lib.confirmFolderAdd}
         />
       )}
     </div>

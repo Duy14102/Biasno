@@ -55,17 +55,21 @@ export function useAudioScheduler({
       const ns = next.get(note.id)
       if (!ns || ns.scheduled) return
 
-      const delaySong = note.time - now
+      const delaySong     = note.time - now
+      const remainingSong = delaySong + note.duration
 
-      // Fully missed: note start is too far in the past.
-      if (delaySong < -0.15 && ns.visual === 'pending') {
+      // Fully missed: note start is too far in the past AND the note has
+      // already fully ended.  The remainingSong guard is required so a seek
+      // that lands mid-sustain (note started > 150 ms before t but is still
+      // ringing) doesn't get marked 'missed' here before the mid-note resume
+      // branch below can play its remaining tail.
+      if (delaySong < -0.15 && remainingSong < 0.05 && ns.visual === 'pending') {
         next.set(note.id, { ...ns, scheduled: true, visual: 'missed' })
         stateChanged = true
         return
       }
 
       // Mid-note resume: play remaining portion from a buffer offset (no re-attack).
-      const remainingSong = delaySong + note.duration
       if (delaySong < 0 && remainingSong > 0.05) {
         const elapsedReal   = (-delaySong) / bpm
         const remainingReal = remainingSong / bpm

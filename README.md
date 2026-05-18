@@ -33,8 +33,9 @@ UI is in Vietnamese / English; theme is dark / light (toggle in the home header)
 - Import a single file via dialog.
 - Drag-drop one or many `.mid` / `.midi` files anywhere over the window — the drop zone lights up on the right panel as soon as the drag starts.
 - Pick a folder; every MIDI inside it gets parsed and pre-rendered in the background.
-- Multi-folder support — entries from different folders coexist; hover the leading icon for the source path.
+- Multi-folder support — entries from different folders coexist; hover the leading icon for the source path. Names are deduplicated: if the newly-picked folder has a file with the same display name as an existing row, the row is kept but updated to point at the new folder's file.
 - Hover any row → trash button → confirm modal (different copy depending on whether the file is import- or folder-sourced; in both cases delete is memory-only, the file on disk stays put).
+- Picking a folder whose files were previously removed shows a confirm modal listing them, so the list doesn't silently stay empty.
 
 ### Audio / input
 - Web Audio engine with sample-based piano via `@tonejs/piano` and `soundfont-player`.

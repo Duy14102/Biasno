@@ -1,5 +1,3 @@
-import type { PracticeMode } from '../types'
-
 // ─── Timing / layout ─────────────────────────────────────────────────────────
 export const TIMING_WINDOW_MS  = 220
 export const KEYBOARD_HEIGHT   = 200
@@ -20,17 +18,16 @@ export const NOTE_LOOK_AHEAD_S = 4.5
 export const LOOP_RESET_AFTER  = 0
 
 // How far AHEAD of a note's onset we light up its piano key in view-listen
-// mode.  Audio fires precisely at note.time, but the visual path (state
-// commit → React render → composite → paint) costs ~1 frame, so flipping the
-// key on at exactly note.time makes the user perceive the flash as starting
-// AFTER the falling note has already touched the keyboard.  Setting the key
-// active ~30 ms early — together with a flash animation that builds from 0
-// to its peak over that same window — puts the brightest frame right when
-// the note arrives, matching the audio onset.
+// mode.  Two delays stack between "we decided to flash" and "user sees peak":
+//   • ~16 ms — React commit + composite + 1 RAF tick before FallingNotes
+//               redraws with the new time.
+//   • ~36 ms — the flash keyframe peaks at 20 % of its 180 ms duration.
+// So flipping the key active 52 ms BEFORE note.time puts the brightest
+// frame right at the moment the falling bar touches the keyboard.
 //
 // Only applies in view-listen mode; practice-mode key flashes are driven by
 // real user input where we can't see the future.
-export const FLASH_ANTICIPATE_S = 0.030
+export const FLASH_ANTICIPATE_S = 0.052
 
 // "Ready" pause we ADD before the first note of the song / loop iteration
 // when the MIDI doesn't already have at least this much silence at the top.
@@ -41,20 +38,8 @@ export const FLASH_ANTICIPATE_S = 0.030
 // gets no extra padding; one that opens dry gets ~1.25 s of breathing room.
 export const LEAD_IN_TARGET    = 1.25
 
-// Vietnamese label shown briefly in the centre of the screen when the user
-// picks a different practice mode from the header dropdown.
-export const MODE_LABELS: Record<PracticeMode, string> = {
-  'view-listen':           '👁️  Xem và nghe',
-  'left-melody':           '🫲  Tay trái — Melody',
-  'right-melody':          '🫱  Tay phải — Melody',
-  'both-melody':           '🙌  Cả 2 tay — Melody',
-  'left-rhythm':           '🫲  Tay trái — Rhythm',
-  'right-rhythm':          '🫱  Tay phải — Rhythm',
-  'both-rhythm':           '🙌  Cả 2 tay — Rhythm',
-  'left-melody-rhythm':    '🫲  Tay trái — Melody + Rhythm',
-  'right-melody-rhythm':   '🫱  Tay phải — Melody + Rhythm',
-  'both-melody-rhythm':    '🙌  Cả 2 tay — Melody + Rhythm',
-}
+// Mode-change flash labels now live in `i18n/modeFlashKey.ts` (translation
+// keys per PracticeMode) so they switch with the active language.
 
 // View-swap animation between SheetMusic ↔ FallingNotes, plus the brief
 // mode-name flash that pops in the centre on mode change.

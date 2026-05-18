@@ -25,8 +25,8 @@ const IconBtn = React.memo(function IconBtn({
         active
           ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
           : danger
-            ? 'bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white'
-            : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white',
+            ? 'bg-slate-100 border border-slate-300 hover:bg-red-500 hover:border-red-500 text-slate-700 hover:text-white dark:bg-slate-700 dark:border-transparent dark:hover:bg-red-600 dark:text-slate-300'
+            : 'bg-slate-100 border border-slate-300 hover:bg-slate-200 hover:border-slate-400 text-slate-700 dark:bg-slate-700 dark:border-transparent dark:hover:bg-slate-600 dark:text-slate-300 dark:hover:text-white',
       ].join(' ')}
     >
       {children}

@@ -1,6 +1,8 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import { useLanguage } from '../i18n/LanguageContext'
+import type { TranslationKey } from '../i18n/translations'
 import type { PracticeMode } from '../types'
 
 // ─── Hand themes ──────────────────────────────────────────────────────────────
@@ -11,7 +13,7 @@ type Hand  = 'right' | 'left' | 'both'
 type Skill = 'melody' | 'rhythm' | 'melody-rhythm'
 
 interface HandTheme {
-  label:      string
+  labelKey:   TranslationKey
   emoji:      string
   // Section heading style
   iconBg:     string
@@ -25,48 +27,48 @@ interface HandTheme {
 
 const HAND_THEMES: Record<Hand, HandTheme> = {
   right: {
-    label:      'Tay phải',
+    labelKey:   'rightHand',
     emoji:      '🫱',
-    iconBg:     'bg-blue-500/15',
-    iconRing:   'ring-blue-400/40',
-    rule:       'border-blue-500/30',
-    cardGrad:   'from-blue-600/30 to-blue-500/10',
-    cardBorder: 'border-blue-500/30 hover:border-blue-400/70',
+    iconBg:     'bg-blue-200 dark:bg-blue-500/15',
+    iconRing:   'ring-blue-400 dark:ring-blue-400/40',
+    rule:       'border-blue-400 dark:border-blue-500/30',
+    cardGrad:   'from-blue-200 to-blue-100 dark:from-blue-600/30 dark:to-blue-500/10',
+    cardBorder: 'border-blue-400 hover:border-blue-600 dark:border-blue-500/30 dark:hover:border-blue-400/70',
     cardGlow:   'hover:shadow-blue-500/20',
   },
   left: {
-    label:      'Tay trái',
+    labelKey:   'leftHand',
     emoji:      '🫲',
-    iconBg:     'bg-orange-500/15',
-    iconRing:   'ring-orange-400/40',
-    rule:       'border-orange-500/30',
-    cardGrad:   'from-orange-600/30 to-orange-500/10',
-    cardBorder: 'border-orange-500/30 hover:border-orange-400/70',
+    iconBg:     'bg-orange-200 dark:bg-orange-500/15',
+    iconRing:   'ring-orange-400 dark:ring-orange-400/40',
+    rule:       'border-orange-400 dark:border-orange-500/30',
+    cardGrad:   'from-orange-200 to-orange-100 dark:from-orange-600/30 dark:to-orange-500/10',
+    cardBorder: 'border-orange-400 hover:border-orange-600 dark:border-orange-500/30 dark:hover:border-orange-400/70',
     cardGlow:   'hover:shadow-orange-500/20',
   },
   both: {
-    label:      'Cả 2 tay',
+    labelKey:   'bothHands',
     emoji:      '🙌',
-    iconBg:     'bg-emerald-500/15',
-    iconRing:   'ring-emerald-400/40',
-    rule:       'border-emerald-500/30',
-    cardGrad:   'from-emerald-600/30 to-emerald-500/10',
-    cardBorder: 'border-emerald-500/30 hover:border-emerald-400/70',
+    iconBg:     'bg-emerald-200 dark:bg-emerald-500/15',
+    iconRing:   'ring-emerald-400 dark:ring-emerald-400/40',
+    rule:       'border-emerald-400 dark:border-emerald-500/30',
+    cardGrad:   'from-emerald-200 to-emerald-100 dark:from-emerald-600/30 dark:to-emerald-500/10',
+    cardBorder: 'border-emerald-400 hover:border-emerald-600 dark:border-emerald-500/30 dark:hover:border-emerald-400/70',
     cardGlow:   'hover:shadow-emerald-500/20',
   },
 }
 
 interface SkillInfo {
-  key:   Skill
-  label: string
-  desc:  string
-  icon:  string
+  key:     Skill
+  labelKey: TranslationKey
+  descKey:  TranslationKey
+  icon:     string
 }
 
 const SKILLS: SkillInfo[] = [
-  { key: 'melody',         label: 'Melody',           desc: 'Đúng note',          icon: '🎵' },
-  { key: 'rhythm',         label: 'Rhythm',           desc: 'Đúng nhịp',          icon: '🥁' },
-  { key: 'melody-rhythm',  label: 'Melody + Rhythm',  desc: 'Đúng cả note và nhịp', icon: '🎯' },
+  { key: 'melody',         labelKey: 'melody',       descKey: 'skillMelodyDesc', icon: '🎵' },
+  { key: 'rhythm',         labelKey: 'rhythm',       descKey: 'skillRhythmDesc', icon: '🥁' },
+  { key: 'melody-rhythm',  labelKey: 'melodyRhythm', descKey: 'skillBothDesc',   icon: '🎯' },
 ]
 
 const HANDS: Hand[] = ['right', 'left', 'both']
@@ -78,13 +80,14 @@ function formatTime(s: number): string {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-function modeLabel(mode: PracticeMode): string {
-  if (mode === 'view-listen') return 'Xem và Nghe'
+function modeLabel(mode: PracticeMode, t: (k: TranslationKey) => string): string {
+  if (mode === 'view-listen') return t('viewAndListen')
   const parts = mode.split('-')
   const hand  = parts[0] as Hand
   const skill = parts.slice(1).join('-')
-  const handLabel  = HAND_THEMES[hand]?.label ?? hand
-  const skillLabel = SKILLS.find(s => s.key === skill)?.label ?? skill
+  const handLabel  = HAND_THEMES[hand] ? t(HAND_THEMES[hand].labelKey) : hand
+  const skillInfo  = SKILLS.find(s => s.key === skill)
+  const skillLabel = skillInfo ? t(skillInfo.labelKey) : skill
   return `${handLabel} — ${skillLabel}`
 }
 
@@ -92,6 +95,7 @@ function modeLabel(mode: PracticeMode): string {
 export default function ModePage(): React.JSX.Element {
   const navigate = useNavigate()
   const { midiFile, setPracticeSettings, resumePoints, setResumePoint } = useAppContext()
+  const { t } = useLanguage()
 
   if (!midiFile) {
     navigate('/')
@@ -114,25 +118,25 @@ export default function ModePage(): React.JSX.Element {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-white">
+    <div className="flex flex-col h-screen bg-slate-200 text-slate-900 dark:bg-slate-950 dark:text-white">
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <header
-        className="flex items-center gap-3 px-5 py-3 bg-gradient-to-b from-slate-800 to-slate-900 border-b border-slate-700/70 shadow-sm"
+        className="flex items-center gap-3 px-5 py-3 bg-white dark:bg-slate-900 dark:bg-gradient-to-b dark:from-slate-800 dark:to-slate-900 border-b border-slate-300 dark:border-slate-700/70 shadow-sm"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700/60 transition-colors text-sm font-medium"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-700 hover:text-slate-900 hover:bg-slate-200 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-700/60 transition-colors text-sm font-medium"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           <span>←</span>
-          <span>Quay lại</span>
+          <span>{t('back')}</span>
         </button>
-        <div className="w-px h-6 bg-slate-700/60" />
-        <span className="text-white font-bold truncate flex-1 min-w-0" title={midiFile.name}>
+        <div className="w-px h-6 bg-slate-300 dark:bg-slate-700/60" />
+        <span className="text-slate-900 dark:text-white font-bold truncate flex-1 min-w-0" title={midiFile.name}>
           {midiFile.name}
         </span>
-        <span className="text-slate-400 text-sm font-mono tabular-nums shrink-0">
+        <span className="text-slate-500 dark:text-slate-400 text-sm font-mono tabular-nums shrink-0">
           {Math.round(midiFile.bpm)} BPM
         </span>
       </header>
@@ -143,16 +147,16 @@ export default function ModePage(): React.JSX.Element {
 
           {/* Resume banner — only for THIS song, with prominent CTA. */}
           {resumePoint && (
-            <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-900/30 via-blue-800/15 to-transparent border border-blue-700/40 flex items-center gap-4 shadow-lg shadow-blue-900/20">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/15 ring-1 ring-blue-400/40 flex items-center justify-center text-2xl shrink-0">
+            <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-200 via-blue-100 to-white dark:from-blue-900/30 dark:via-blue-800/15 dark:to-transparent border border-blue-400 dark:border-blue-700/40 flex items-center gap-4 shadow-lg shadow-blue-500/10 dark:shadow-blue-900/20">
+              <div className="w-12 h-12 rounded-xl bg-blue-100 ring-1 ring-blue-300 dark:bg-blue-500/15 dark:ring-blue-400/40 flex items-center justify-center text-2xl shrink-0">
                 ⏱
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white font-semibold text-sm">
-                  Tiếp tục từ <span className="text-blue-300 font-mono tabular-nums">{formatTime(resumePoint.time)}</span>
+                <p className="text-slate-900 dark:text-white font-semibold text-sm">
+                  {t('continueFromLabel')}<span className="text-blue-600 dark:text-blue-300 font-mono tabular-nums">{formatTime(resumePoint.time)}</span>
                 </p>
-                <p className="text-slate-400 text-xs mt-0.5 truncate">
-                  {modeLabel(resumePoint.mode)}
+                <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5 truncate">
+                  {modeLabel(resumePoint.mode, t)}
                 </p>
               </div>
               <div className="flex gap-2 shrink-0">
@@ -162,22 +166,22 @@ export default function ModePage(): React.JSX.Element {
                   // text and scale was making "Tiếp tục" briefly blurry on hover.
                   className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-400 active:bg-blue-600 text-white text-sm font-semibold transition-[background-color,box-shadow] duration-150 shadow-lg shadow-blue-500/30 hover:shadow-blue-500/55"
                 >
-                  Tiếp tục
+                  {t('continueAction')}
                 </button>
                 <button
                   onClick={() => setResumePoint(midiFile.name, null)}
-                  className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-sm transition-colors"
+                  className="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-300 dark:hover:text-white text-sm transition-colors"
                 >
-                  Bỏ qua
+                  {t('skip')}
                 </button>
               </div>
             </div>
           )}
 
           {/* Title */}
-          <h1 className="text-2xl font-bold text-white mb-1">Chọn chế độ luyện tập</h1>
-          <p className="text-slate-400 text-sm mb-6">
-            Chọn tay bạn muốn tập, sau đó chọn kỹ năng — note, nhịp, hay cả hai.
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">{t('choosePracticeMode')}</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+            {t('choosePracticeHint')}
           </p>
 
           {/* Featured: Xem & Nghe ─────────────────────────────────────────── */}
@@ -186,24 +190,24 @@ export default function ModePage(): React.JSX.Element {
             // Lift via shadow + border highlight + gradient brightness — never
             // scale, because the card contains text (title, description, BPM
             // badge) and scale tweens cause subpixel text re-rasterisation.
-            className="w-full mb-7 text-left p-5 rounded-2xl border border-violet-500/40 hover:border-violet-400/80 bg-gradient-to-br from-violet-700/40 via-purple-700/25 to-fuchsia-700/30 hover:from-violet-700/55 hover:via-purple-700/40 hover:to-fuchsia-700/45 hover:shadow-xl hover:shadow-violet-500/30 transition-[background,border-color,box-shadow] duration-200 group relative overflow-hidden"
+            className="w-full mb-7 text-left p-5 rounded-2xl border border-violet-400 hover:border-violet-600 bg-gradient-to-br from-violet-200 via-purple-100 to-fuchsia-200 hover:from-violet-300 hover:via-purple-200 hover:to-fuchsia-300 dark:border-violet-500/40 dark:hover:border-violet-400/80 dark:from-violet-700/40 dark:via-purple-700/25 dark:to-fuchsia-700/30 dark:hover:from-violet-700/55 dark:hover:via-purple-700/40 dark:hover:to-fuchsia-700/45 hover:shadow-xl hover:shadow-violet-500/30 transition-[background,border-color,box-shadow] duration-200 group relative overflow-hidden"
           >
             <div className="flex items-center gap-4 relative z-10">
-              <div className="w-14 h-14 rounded-2xl bg-violet-500/20 ring-1 ring-violet-400/40 flex items-center justify-center text-3xl shadow-lg shrink-0">
+              <div className="w-14 h-14 rounded-2xl bg-violet-200 ring-1 ring-violet-300 dark:bg-violet-500/20 dark:ring-violet-400/40 flex items-center justify-center text-3xl shadow-lg shrink-0">
                 👁
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="font-bold text-white text-lg">Xem và Nghe</span>
-                  <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-500/25 text-violet-200 font-semibold border border-violet-400/30">
-                    Demo
+                  <span className="font-bold text-slate-900 dark:text-white text-lg">{t('viewAndListen')}</span>
+                  <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-200 text-violet-800 border-violet-300 dark:bg-violet-500/25 dark:text-violet-200 dark:border-violet-400/30 font-semibold border">
+                    {t('demo')}
                   </span>
                 </div>
-                <p className="text-white/70 text-sm">
-                  Tự động phát bài — xem note rơi và nghe trước khi bắt đầu tập
+                <p className="text-slate-700 dark:text-white/70 text-sm">
+                  {t('viewAndListenDesc')}
                 </p>
               </div>
-              <span className="self-center text-2xl text-violet-300 group-hover:translate-x-1 transition-transform shrink-0">
+              <span className="self-center text-2xl text-violet-500 dark:text-violet-300 group-hover:translate-x-1 transition-transform shrink-0">
                 →
               </span>
             </div>
@@ -228,7 +232,7 @@ export default function ModePage(): React.JSX.Element {
                   >
                     {theme.emoji}
                   </div>
-                  <h2 className="text-base font-bold text-white">{theme.label}</h2>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">{t(theme.labelKey)}</h2>
                   <div className={`flex-1 border-t border-dashed ${theme.rule}`} />
                 </div>
 
@@ -266,6 +270,7 @@ function SkillCard({
   theme: HandTheme
   onSelect: () => void
 }): React.JSX.Element {
+  const { t } = useLanguage()
   return (
     <button
       onClick={onSelect}
@@ -284,16 +289,16 @@ function SkillCard({
       <div className="relative z-10">
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-xl">{skill.icon}</span>
-          <span className="font-bold text-white text-sm leading-tight">{skill.label}</span>
+          <span className="font-bold text-slate-900 dark:text-white text-sm leading-tight">{t(skill.labelKey)}</span>
         </div>
-        <p className="text-white/65 text-xs leading-snug">{skill.desc}</p>
+        <p className="text-slate-600 dark:text-white/65 text-xs leading-snug">{t(skill.descKey)}</p>
       </div>
       {/* Decorative oversized icon — nearly invisible, just adds texture */}
-      <div className="absolute -right-3 -bottom-4 text-6xl leading-none opacity-[0.06] pointer-events-none select-none">
+      <div className="absolute -right-3 -bottom-4 text-6xl leading-none opacity-[0.10] dark:opacity-[0.06] pointer-events-none select-none">
         {skill.icon}
       </div>
       {/* Subtle arrow that slides on hover */}
-      <span className="absolute right-3 top-3 text-white/30 group-hover:text-white/70 group-hover:translate-x-0.5 transition-all text-sm">
+      <span className="absolute right-3 top-3 text-slate-400 group-hover:text-slate-600 dark:text-white/30 dark:group-hover:text-white/70 group-hover:translate-x-0.5 transition-all text-sm">
         →
       </span>
     </button>

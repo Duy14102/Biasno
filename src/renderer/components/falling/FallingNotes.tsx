@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback } from 'react'
 import type { MidiNote, NoteVisualState } from '../../types'
+import { useTheme } from '../../context/ThemeContext'
 import {
   PIANO_MIN, PIANO_MAX, TOTAL_WHITE_KEYS,
   isBlackKey, getWhiteKeyIndex, getBlackKeyFraction,
@@ -64,6 +65,7 @@ export default function FallingNotes({
   zoom = 1, showLaneLines = true,
   onCanvasReady
 }: FallingNotesProps): React.JSX.Element {
+  const { theme }           = useTheme()
   const canvasRef           = useRef<HTMLCanvasElement>(null)
   const containerRef        = useRef<HTMLDivElement>(null)
   const notesRef            = useRef(notes)
@@ -71,6 +73,7 @@ export default function FallingNotes({
   const practiceModeRef     = useRef(practiceMode)
   const zoomRef             = useRef(zoom)
   const showLaneLinesRef    = useRef(showLaneLines)
+  const themeRef            = useRef(theme)
   const rafRef              = useRef(0)
 
   useEffect(() => { notesRef.current        = notes },        [notes])
@@ -78,6 +81,7 @@ export default function FallingNotes({
   useEffect(() => { practiceModeRef.current = practiceMode }, [practiceMode])
   useEffect(() => { zoomRef.current         = zoom },         [zoom])
   useEffect(() => { showLaneLinesRef.current = showLaneLines }, [showLaneLines])
+  useEffect(() => { themeRef.current        = theme },        [theme])
 
   // Resize observer
   useEffect(() => {
@@ -125,9 +129,15 @@ export default function FallingNotes({
     ctx.clearRect(0, 0, W, H)
 
     // ── Background ──────────────────────────────────────────────────────────
+    const isLight = themeRef.current === 'light'
     const bg = ctx.createLinearGradient(0, 0, 0, H)
-    bg.addColorStop(0, '#0a0f1e')
-    bg.addColorStop(1, '#111827')
+    if (isLight) {
+      bg.addColorStop(0, '#e2e8f0')   // slate-200
+      bg.addColorStop(1, '#cbd5e1')   // slate-300
+    } else {
+      bg.addColorStop(0, '#0a0f1e')
+      bg.addColorStop(1, '#111827')
+    }
     ctx.fillStyle = bg
     ctx.fillRect(0, 0, W, H)
 
@@ -135,7 +145,7 @@ export default function FallingNotes({
 
     // ── Vertical key-lane dividers ──────────────────────────────────────────
     if (showLaneLinesRef.current) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+      ctx.strokeStyle = isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)'
       ctx.lineWidth   = 1
       for (let i = 0; i <= TOTAL_WHITE_KEYS; i++) {
         const x = Math.round(i * whiteW) + 0.5
@@ -150,12 +160,17 @@ export default function FallingNotes({
 
     // ── Hit line glow ───────────────────────────────────────────────────────
     const hitGrad = ctx.createLinearGradient(0, hitY - 14, 0, hitY)
-    hitGrad.addColorStop(0, 'rgba(255,255,255,0.0)')
-    hitGrad.addColorStop(1, 'rgba(255,255,255,0.14)')
+    if (isLight) {
+      hitGrad.addColorStop(0, 'rgba(15,23,42,0.0)')
+      hitGrad.addColorStop(1, 'rgba(15,23,42,0.14)')
+    } else {
+      hitGrad.addColorStop(0, 'rgba(255,255,255,0.0)')
+      hitGrad.addColorStop(1, 'rgba(255,255,255,0.14)')
+    }
     ctx.fillStyle = hitGrad
     ctx.fillRect(0, hitY - 14, W, 14)
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+    ctx.strokeStyle = isLight ? 'rgba(15,23,42,0.35)' : 'rgba(255,255,255,0.35)'
     ctx.lineWidth   = 1.5
     ctx.beginPath()
     ctx.moveTo(0, hitY - 0.75)

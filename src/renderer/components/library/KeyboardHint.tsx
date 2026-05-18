@@ -1,9 +1,11 @@
 import React from 'react'
+import { useLanguage } from '../../i18n/LanguageContext'
 
 /** Mini one-octave piano showing the computer-keyboard mapping
  *  (A → ; = C4 → E5).  Sits below the device panel as a permanent
  *  cheat-sheet so players without a MIDI keyboard can find their bearings. */
 export default function KeyboardHint(): React.JSX.Element {
+  const { t } = useLanguage()
   // 10 white keys spanning C4..E5.  Each entry = computer-keyboard letter.
   const whites = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';']
   // Black keys, positioned by the index of the white key they sit AFTER.
@@ -21,10 +23,10 @@ export default function KeyboardHint(): React.JSX.Element {
     { letter: 'P', afterIdx: 8 },
   ]
   return (
-    <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-3.5">
+    <div className="bg-white border border-slate-300 shadow-sm dark:bg-slate-800/40 dark:border-slate-700/50 dark:shadow-none rounded-xl p-3.5">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
-          Phím máy tính
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400">
+          {t('computerKeys')}
         </p>
         <p className="text-[10px] text-slate-500 font-mono">A = C4 · ; = E5</p>
       </div>

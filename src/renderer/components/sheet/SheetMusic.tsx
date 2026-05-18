@@ -5,6 +5,7 @@ import { getCachedSheet, preloadSheet, attachCachedTo, detachCachedToStorage } f
 import { collectNoteRefs, bsearchStep, lowerBoundRefs, type NoteRef } from './noteRefs'
 import { clearHighlights, colorFullNote } from './highlighting'
 import { resetScrollState, scrollToCursor } from './scrollToCursor'
+import { useLanguage } from '../../i18n/LanguageContext'
 
 // ─── Floating-button icons ───────────────────────────────────────────────────
 function LockClosedIcon(): React.JSX.Element {
@@ -64,6 +65,7 @@ const SHEET_STYLE = `
 function SheetMusic({
   midiFile, currentTimeRef, activeKeys, highlightMode = false,
 }: SheetMusicProps): React.JSX.Element {
+  const { t } = useLanguage()
   const bpm            = midiFile.bpm
   const scrollRef      = useRef<HTMLDivElement>(null)
   const wrapperRef     = useRef<HTMLDivElement>(null)
@@ -318,14 +320,14 @@ function SheetMusic({
       >
         <div className="flex flex-col items-center gap-3 text-slate-500 select-none">
           <div className="w-8 h-8 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin" />
-          <div className="text-sm">Đang tải sheet nhạc...</div>
+          <div className="text-sm">{t('loadingSheet')}</div>
         </div>
       </div>
 
       {/* Auto-scroll lock — top-right corner */}
       <button
         onClick={toggleAutoScroll}
-        title={autoScroll ? 'Auto-scroll bật — nhấn để tắt' : 'Auto-scroll tắt — nhấn để bật'}
+        title={autoScroll ? t('autoScrollOnHint') : t('autoScrollOffHint')}
         className={[
           'absolute top-3 right-3 z-20 w-8 h-8 rounded-full flex items-center justify-center',
           'shadow-md backdrop-blur-sm ring-1',
@@ -341,7 +343,7 @@ function SheetMusic({
       {/* Dark-mode toggle — directly below the lock button */}
       <button
         onClick={toggleDarkSheet}
-        title={darkSheet ? 'Chế độ tối — nhấn để chuyển sáng' : 'Chế độ sáng — nhấn để chuyển tối'}
+        title={darkSheet ? t('darkSheetHint') : t('lightSheetHint')}
         className={[
           'absolute top-[3.25rem] right-3 z-20 w-8 h-8 rounded-full flex items-center justify-center',
           'shadow-md backdrop-blur-sm ring-1',

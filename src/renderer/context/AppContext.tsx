@@ -1,5 +1,21 @@
-import React, { createContext, useContext, useState, useCallback } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import type { MidiFileData, PracticeSettings, PracticeMode } from '../types'
+
+const LS_FILE_LIST   = 'biasno.fileList'
+const LS_FOLDER_PATH = 'biasno.folderPath'
+
+function loadFileList(): FileEntry[] {
+  try {
+    const raw = localStorage.getItem(LS_FILE_LIST)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
+}
+
+function loadFolderPath(): string | null {
+  try { return localStorage.getItem(LS_FOLDER_PATH) } catch { return null }
+}
 
 export interface FileEntry {
   name: string
@@ -64,8 +80,19 @@ const AppContext = createContext<AppContextValue | null>(null)
 export function AppProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [midiFile,         setMidiFile]         = useState<MidiFileData | null>(null)
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettings | null>(null)
-  const [fileList,         setFileList]         = useState<FileEntry[]>([])
-  const [folderPath,       setFolderPath]       = useState<string | null>(null)
+  const [fileList,         setFileList]         = useState<FileEntry[]>(loadFileList)
+  const [folderPath,       setFolderPath]       = useState<string | null>(loadFolderPath)
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_FILE_LIST, JSON.stringify(fileList)) } catch { /* quota */ }
+  }, [fileList])
+
+  useEffect(() => {
+    try {
+      if (folderPath === null) localStorage.removeItem(LS_FOLDER_PATH)
+      else                     localStorage.setItem(LS_FOLDER_PATH, folderPath)
+    } catch { /* quota */ }
+  }, [folderPath])
   const [resumePoints,     setAllResumePoints] = useState<ResumePoints>({})
   const [modePrefs,        setAllModePrefs]    = useState<Partial<Record<string, ModePrefs>>>({})
 

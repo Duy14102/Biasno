@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom'
 import { parseMidiBuffer } from '../../utils/midiUtils'
 import { preloadSheet } from '../sheet/sheetPreload'
 import { useAppContext, type FileEntry } from '../../context/AppContext'
+import { useLanguage } from '../../i18n/LanguageContext'
 
 export interface UseFileLibrary {
   // Reactive state
@@ -37,7 +38,8 @@ export interface UseFileLibrary {
 
 export function useFileLibrary(): UseFileLibrary {
   const navigate = useNavigate()
-  const { setMidiFile, updateFileList, setFolderPath } = useAppContext()
+  const { setMidiFile, updateFileList, setFolderPath, folderPath } = useAppContext()
+  const { t } = useLanguage()
 
   // Loading set rather than a single path — folder picks parse multiple files
   // in sequence and EVERY row should show its own spinner until ready.
@@ -60,20 +62,20 @@ export function useFileLibrary(): UseFileLibrary {
     setError(null)
     try {
       const buffer = await window.electronAPI.readMidiFile(entry.path)
-      if (!buffer) { setError('Không đọc được file MIDI'); return }
+      if (!buffer) { setError(t('errCantReadMidiFile')); return }
       const data = await parseMidiBuffer(buffer, entry.name)
-      if (data.notes.length === 0) { setError('File không chứa note nào'); return }
+      if (data.notes.length === 0) { setError(t('errEmptyMidi')); return }
       setMidiFile(data)
       // Warm the sheet cache while the user is already waiting — opening the
       // sheet on the practice page is then instant.
       await preloadSheet(data)
       navigate('/mode')
     } catch (e) {
-      setError(`Lỗi: ${e instanceof Error ? e.message : 'Unknown'}`)
+      setError(t('errGeneric', { msg: e instanceof Error ? e.message : 'Unknown' }))
     } finally {
       removeLoading(entry.path)
     }
-  }, [setMidiFile, navigate, addLoading, removeLoading])
+  }, [setMidiFile, navigate, addLoading, removeLoading, t])
 
   // ─── Import-file button → native dialog → list row (no auto-navigate) ───
   const importFile = useCallback(async () => {
@@ -100,7 +102,7 @@ export function useFileLibrary(): UseFileLibrary {
     try {
       const data = await parseMidiBuffer(result.buffer, result.name)
       if (data.notes.length === 0) {
-        setError('File không chứa note nào')
+        setError(t('errEmptyMidi'))
         updateFileList((prev) => prev.filter((f) => f.path !== result.path))
         return
       }
@@ -109,33 +111,29 @@ export function useFileLibrary(): UseFileLibrary {
       ))
       await preloadSheet(data)
     } catch (e) {
-      setError(`Không đọc được file: ${e instanceof Error ? e.message : ''}`)
+      setError(t('errCantReadFile', { msg: e instanceof Error ? e.message : '' }))
       updateFileList((prev) => prev.filter((f) => f.path !== result.path))
     } finally {
       removeLoading(result.path)
     }
-  }, [updateFileList, addLoading, removeLoading])
+  }, [updateFileList, addLoading, removeLoading, t])
 
-  // ─── Choose-folder button → scan → sequentially parse + preload each file
-  const chooseFolder = useCallback(async () => {
-    setError(null)
-    setBusyAction('folder')
-    let folder: string | null
-    try { folder = await window.electronAPI.openFolder() }
-    finally { setBusyAction(null) }
-    if (!folder) return
-
-    setFolderPath(folder)
+  // ─── Sync a folder's contents into fileList ────────────────────────────
+  // Used by chooseFolder, the persisted-folder mount effect, and the live
+  // fs.watch callback.  Diffs scan results against the current list so files
+  // added on disk get parsed + preloaded, removed files disappear from the
+  // list, and untouched files keep their cached duration / sheet preload.
+  // When the folder is missing (scan returns null) the cached entries are
+  // left in place so the library doesn't vanish if a drive is unplugged.
+  const syncFolder = useCallback(async (folder: string) => {
     const refs = await window.electronAPI.scanMidiFolder(folder)
-    if (refs.length === 0) return
+    if (refs === null) return  // folder gone — preserve persisted entries
 
-    // Mark every scanned file as loading UP FRONT — synchronous loop, so the
-    // loading set is populated before any await yields control.  Don't try
-    // to infer "new files" from inside an updateFileList updater; React may
-    // run that updater later in a batch and reading the result back is stale.
-    for (const r of refs) addLoading(r.path)
+    // Compute the "needs parsing" set inside the state updater so we always
+    // see the latest fileList; the array is captured into the outer scope
+    // for the parse loop that runs after.
+    let needsParsing: Array<{ name: string; path: string }> = []
 
-    // Add placeholders; preserve known durations on re-scan.
     updateFileList((prev) => {
       const folderEntries: FileEntry[] = refs.map((r) => {
         const existing = prev.find((f) => f.path === r.path)
@@ -144,19 +142,29 @@ export function useFileLibrary(): UseFileLibrary {
           path:       r.path,
           duration:   existing?.duration,
           source:     'folder',
-          folderPath: folder!,
+          folderPath: folder,
         }
       })
-      const others = prev.filter((f) => !refs.some((r) => r.path === f.path))
+      // Keep entries NOT in the scan, EXCEPT folder-sourced entries that
+      // belonged to this folder — those are stale (file was deleted) and
+      // must be dropped.  Entries from other folders / imports are kept.
+      const others = prev.filter((f) => {
+        if (refs.some((r) => r.path === f.path))                          return false
+        if (f.source === 'folder' && f.folderPath === folder)             return false
+        return true
+      })
+      needsParsing = folderEntries
+        .filter((e) => e.duration === undefined)
+        .map((e) => ({ name: e.name, path: e.path }))
       return [...others, ...folderEntries]
     })
 
+    if (needsParsing.length === 0) return
+
+    for (const r of needsParsing) addLoading(r.path)
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
 
-    // For each file: read → parse → fill duration → preload sheet → clear
-    // spinner.  Sequential keeps the main thread from drowning in N OSMD
-    // renders at once; each spinner clears as its row resolves.
-    for (const r of refs) {
+    for (const r of needsParsing) {
       try {
         const buf = await window.electronAPI.readMidiFile(r.path)
         if (!buf) continue
@@ -167,12 +175,54 @@ export function useFileLibrary(): UseFileLibrary {
         ))
         await preloadSheet(data)
       } catch (err) {
-        console.warn('[folder parse]', r.path, err)
+        console.warn('[folder sync]', r.path, err)
       } finally {
         removeLoading(r.path)
       }
     }
-  }, [updateFileList, setFolderPath, addLoading, removeLoading])
+  }, [updateFileList, addLoading, removeLoading])
+
+  // ─── Choose-folder button → set path → effect handles scan + watch ──────
+  const chooseFolder = useCallback(async () => {
+    setError(null)
+    setBusyAction('folder')
+    let folder: string | null
+    try { folder = await window.electronAPI.openFolder() }
+    finally { setBusyAction(null) }
+    if (!folder) return
+
+    // If user re-picks the SAME folder, the effect below won't re-fire
+    // (folderPath unchanged) — force a manual sync so they still get a
+    // refresh.  Otherwise the effect handles the first scan.
+    if (folder === folderPath) syncFolder(folder)
+    else                       setFolderPath(folder)
+  }, [setFolderPath, folderPath, syncFolder])
+
+  // ─── Auto-sync + watch whenever folderPath is set ──────────────────────
+  // Fires on mount (covers the persisted-folder rehydration case) and on
+  // every folderPath change.  The watcher in main debounces and fires an
+  // IPC event back; we just re-sync.
+  useEffect(() => {
+    if (!folderPath) return
+    let cancelled = false
+
+    const doSync = async () => {
+      if (cancelled) return
+      try { await syncFolder(folderPath) } catch (e) { console.warn('[syncFolder]', e) }
+    }
+
+    doSync()
+    window.electronAPI.watchFolder(folderPath)
+    const unsubscribe = window.electronAPI.onFolderChanged((changed) => {
+      if (changed === folderPath) doSync()
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+      window.electronAPI.unwatchFolder()
+    }
+  }, [folderPath, syncFolder])
 
   // ─── Drag-drop ──────────────────────────────────────────────────────────
   // Window-level listeners flip `isDragging` the instant any file enters the
@@ -231,8 +281,8 @@ export function useFileLibrary(): UseFileLibrary {
 
     if (midis.length === 0) {
       setError(all.length === 0
-        ? 'Không có file nào được kéo vào'
-        : 'File kéo vào không phải MIDI (.mid / .midi)')
+        ? t('errNoFilesDragged')
+        : t('errNotMidiDragged'))
       return
     }
 
@@ -281,9 +331,9 @@ export function useFileLibrary(): UseFileLibrary {
     }
 
     if (failed.length) {
-      setError(`Không đọc được: ${failed.join(', ')}`)
+      setError(t('errFailedToRead', { names: failed.join(', ') }))
     }
-  }, [updateFileList, addLoading, removeLoading])
+  }, [updateFileList, addLoading, removeLoading, t])
 
   // ─── Delete plumbing ────────────────────────────────────────────────────
   const requestDelete = useCallback((entry: FileEntry) => setPendingDelete(entry), [])

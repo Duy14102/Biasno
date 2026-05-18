@@ -12,8 +12,10 @@ import { useTransport }         from '../practice/useTransport'
 import { useModeChange }        from '../practice/useModeChange'
 import {
   KEYBOARD_HEIGHT, NOTE_LOOK_AHEAD_S,
-  LEAD_IN_TARGET, MODE_LABELS, PRACTICE_TRANSITION_STYLE,
+  LEAD_IN_TARGET, PRACTICE_TRANSITION_STYLE,
 } from '../practice/constants'
+import { useLanguage } from '../i18n/LanguageContext'
+import { MODE_FLASH_KEYS } from '../i18n/modeFlashKey'
 import type { NoteState } from '../practice/noteState'
 import PianoKeyboard  from '../components/keyboard/PianoKeyboard'
 import FallingNotes, { type NoteRenderState } from '../components/falling/FallingNotes'
@@ -26,6 +28,7 @@ import { getActiveHands, requiresMelody } from '../utils/midiUtils'
 export default function PracticePage(): React.JSX.Element {
   const navigate = useNavigate()
   const { practiceSettings, resumePoints, setResumePoint, modePrefs, setModePrefs } = useAppContext()
+  const { t } = useLanguage()
   useAudioEngine()
 
   const midiFile = practiceSettings?.midiFile ?? null
@@ -366,14 +369,14 @@ export default function PracticePage(): React.JSX.Element {
   // ─── Guard (all hooks must run before this) ───────────────────────────────
   if (!practiceSettings || !midiFile) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-950 text-slate-400">
-        Đang chuyển hướng...
+      <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+        {t('redirecting')}
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
+    <div className="flex flex-col h-screen bg-slate-200 dark:bg-slate-950 overflow-hidden">
       <style>{PRACTICE_TRANSITION_STYLE}</style>
 
       <PracticeHeader
@@ -468,13 +471,13 @@ export default function PracticePage(): React.JSX.Element {
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div
               key={modeFlash}
-              className="px-6 py-3 rounded-2xl bg-slate-900/80 backdrop-blur border border-blue-400/30 shadow-2xl text-white text-lg font-semibold select-none"
+              className="px-6 py-3 rounded-2xl bg-white/90 text-slate-900 dark:bg-slate-900/80 dark:text-white backdrop-blur border border-blue-400/30 shadow-2xl text-lg font-semibold select-none"
               style={{
                 animation: 'modeFlash 1.0s cubic-bezier(0.16,1,0.3,1) forwards',
                 boxShadow: '0 0 40px rgba(80,140,255,0.45)',
               }}
             >
-              {MODE_LABELS[modeFlash] ?? modeFlash}
+              {MODE_FLASH_KEYS[modeFlash] ? t(MODE_FLASH_KEYS[modeFlash]) : modeFlash}
             </div>
           </div>
         )}
@@ -483,7 +486,7 @@ export default function PracticePage(): React.JSX.Element {
         {countdown !== null && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div
-              className="text-white font-bold select-none"
+              className="text-slate-900 dark:text-white font-bold select-none"
               style={{ fontSize: 120, lineHeight: 1, textShadow: '0 0 60px rgba(100,160,255,0.8), 0 0 20px rgba(100,160,255,0.5)' }}
             >
               {countdown > 0 ? countdown : '▶'}

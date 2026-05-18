@@ -110,12 +110,12 @@ export default function ProgressBar({
     <>
       <style>{ANIM_CSS}</style>
       <div
-        className="flex items-center gap-3 px-4 bg-gradient-to-b from-slate-900 to-slate-950 border-b border-slate-700/60 select-none"
+        className="flex items-center gap-3 px-4 bg-white dark:bg-slate-900 dark:bg-gradient-to-b dark:from-slate-900 dark:to-slate-950 border-b border-slate-300 dark:border-slate-700/60 select-none"
         style={{ height: 48 }}
       >
         {/* Current time — slightly larger / brighter so it pops against the
             track. Tabular-nums keeps the digits from jitterring as time ticks. */}
-        <span className="text-sm font-mono font-semibold text-slate-100 tabular-nums w-12 text-right shrink-0">
+        <span className="text-sm font-mono font-semibold text-slate-700 dark:text-slate-100 tabular-nums w-12 text-right shrink-0">
           {formatTime(currentTime)}
         </span>
 
@@ -131,11 +131,11 @@ export default function ProgressBar({
         >
           {/* Background track — inset shadow gives a subtle "groove" feel. */}
           <div
-            className="absolute inset-0 rounded-full transition-colors duration-150"
-            style={{
-              background: active ? '#334155' : '#1e293b',
-              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.45)',
-            }}
+            className={[
+              'absolute inset-0 rounded-full transition-colors duration-150',
+              active ? 'bg-slate-300 dark:bg-slate-600' : 'bg-slate-200 dark:bg-slate-800',
+            ].join(' ')}
+            style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)' }}
           />
 
           {/* Loop region */}
@@ -181,14 +181,14 @@ export default function ProgressBar({
           {/* Hover preview marker — vertical hairline at cursor x. */}
           {hoverFrac !== null && !isDragging && (
             <div
-              className="absolute top-1/2 -translate-y-1/2 w-px h-5 bg-slate-300/50 pointer-events-none"
+              className="absolute top-1/2 -translate-y-1/2 w-px h-5 bg-slate-500/60 dark:bg-slate-300/50 pointer-events-none"
               style={{ left: `${hoverFrac * 100}%` }}
             />
           )}
 
           {/* Playhead */}
           <div
-            className={`absolute top-1/2 -translate-y-1/2 rounded-full bg-white transition-none ${progress > 0 ? 'pb-glow' : ''}`}
+            className={`absolute top-1/2 -translate-y-1/2 rounded-full bg-blue-600 dark:bg-white transition-none ${progress > 0 ? 'pb-glow' : ''}`}
             style={{
               width:  headSize,
               height: headSize,
@@ -204,7 +204,7 @@ export default function ProgressBar({
               className="absolute -top-7 pointer-events-none z-20"
               style={{ left: `${hoverFrac * 100}%`, transform: 'translateX(-50%)' }}
             >
-              <div className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-600/80 text-[11px] text-slate-100 font-mono tabular-nums shadow-lg whitespace-nowrap">
+              <div className="px-1.5 py-0.5 rounded bg-white text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-600/80 border text-[11px] font-mono tabular-nums shadow-lg whitespace-nowrap">
                 {formatTime(hoverFrac * duration)}
               </div>
             </div>

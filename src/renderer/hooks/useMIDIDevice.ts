@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { MidiDevice } from '../types'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export type MidiNoteCallback = (midi: number, velocity: number, on: boolean) => void
 
 export function useMIDIDevice(onNote: MidiNoteCallback) {
+  const { t } = useLanguage()
   const [supported, setSupported] = useState(false)
   const [devices, setDevices] = useState<MidiDevice[]>([])
   const [connectedId, setConnectedId] = useState<string | null>(null)
@@ -27,7 +29,7 @@ export function useMIDIDevice(onNote: MidiNoteCallback) {
   useEffect(() => {
     if (!navigator.requestMIDIAccess) {
       setSupported(false)
-      setError('Web MIDI API không được hỗ trợ')
+      setError(t('errMidiNotSupported'))
       return
     }
 
@@ -47,9 +49,9 @@ export function useMIDIDevice(onNote: MidiNoteCallback) {
       refreshDevices()
       access.onstatechange = () => refreshDevices()
     }).catch((err) => {
-      setError(`Không thể truy cập MIDI: ${err.message}`)
+      setError(t('errCantAccessMidi', { msg: err.message }))
     })
-  }, [])
+  }, [t])
 
   const connect = useCallback((deviceId: string) => {
     const access = accessRef.current

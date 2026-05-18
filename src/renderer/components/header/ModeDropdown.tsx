@@ -3,6 +3,7 @@ import type { PracticeMode } from '../../types'
 import {
   MODE_GROUPS, GROUP_COLORS, modeGroup, modeFullLabel, DROPDOWN_CSS,
 } from './modeGroups'
+import { useLanguage } from '../../i18n/LanguageContext'
 
 interface Props {
   mode:         PracticeMode
@@ -14,6 +15,7 @@ interface Props {
  *  grouped by hand (view / right / left / both), each group sub-titled and
  *  themed with its hand colour. */
 const ModeDropdown = React.memo(function ModeDropdown({ mode, onModeChange }: Props) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const grp = modeGroup(mode)
@@ -40,15 +42,15 @@ const ModeDropdown = React.memo(function ModeDropdown({ mode, onModeChange }: Pr
           col.badge,
         ].join(' ')}
       >
-        {modeFullLabel(mode)}
+        {modeFullLabel(mode, t)}
         <span className={`text-[10px] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}>▾</span>
       </button>
 
       {open && (
-        <div className="hdr-dd-enter absolute left-0 top-full mt-1.5 z-50 min-w-[260px] rounded-2xl bg-slate-800/95 backdrop-blur-md border border-slate-600/80 shadow-2xl shadow-black/60 overflow-hidden">
-          <div className="px-4 pt-3 pb-2 border-b border-slate-700/60">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-              Chế độ luyện tập
+        <div className="hdr-dd-enter absolute left-0 top-full mt-1.5 z-50 min-w-[260px] rounded-2xl bg-white/95 border-slate-200 dark:bg-slate-800/95 dark:border-slate-600/80 backdrop-blur-md border shadow-2xl shadow-black/20 dark:shadow-black/60 overflow-hidden">
+          <div className="px-4 pt-3 pb-2 border-b border-slate-200 dark:border-slate-700/60">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+              {t('practiceModeHeading')}
             </p>
           </div>
 
@@ -57,12 +59,12 @@ const ModeDropdown = React.memo(function ModeDropdown({ mode, onModeChange }: Pr
               const gc = GROUP_COLORS[g.key]
               return (
                 <div key={g.key}>
-                  {gi > 0 && <div className="mx-3 my-1 border-t border-slate-700/50" />}
+                  {gi > 0 && <div className="mx-3 my-1 border-t border-slate-200 dark:border-slate-700/50" />}
 
-                  {g.label && (
+                  {g.labelKey && (
                     <div className="flex items-center gap-2 px-3 pt-1.5 pb-0.5">
                       <span className={`text-[10px] font-bold uppercase tracking-[0.15em] ${gc.header}`}>
-                        {g.label}
+                        {t(g.labelKey)}
                       </span>
                       <div className={`flex-1 h-px ${gc.header} opacity-20`} style={{ background: 'currentColor' }} />
                     </div>
@@ -78,11 +80,11 @@ const ModeDropdown = React.memo(function ModeDropdown({ mode, onModeChange }: Pr
                           'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors',
                           active
                             ? `${gc.item} font-semibold`
-                            : 'text-slate-300 hover:bg-slate-700/50 hover:text-white',
+                            : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-white',
                         ].join(' ')}
                       >
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${active ? gc.dot : 'bg-slate-600'}`} />
-                        <span className="flex-1">{item.sub}</span>
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${active ? gc.dot : 'bg-slate-300 dark:bg-slate-600'}`} />
+                        <span className="flex-1">{t(item.subKey)}</span>
                         {active && (
                           <svg viewBox="0 0 24 24" fill="currentColor" className={`w-3.5 h-3.5 ${gc.header}`}>
                             <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>

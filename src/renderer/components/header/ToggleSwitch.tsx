@@ -12,7 +12,7 @@ export default function ToggleSwitch({
       style={{ padding: '2px' }}
       className={[
         'flex items-center w-10 h-5 rounded-full transition-colors shrink-0',
-        on ? 'bg-blue-500' : 'bg-slate-600 hover:bg-slate-500',
+        on ? 'bg-blue-500' : 'bg-slate-300 hover:bg-slate-400 dark:bg-slate-600 dark:hover:bg-slate-500',
       ].join(' ')}
       role="switch"
       aria-checked={on}

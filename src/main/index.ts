@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import { join } from 'path'
-import { readFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, readdirSync, watch, type FSWatcher } from 'fs'
 
 const isDev = !app.isPackaged
 
@@ -66,8 +66,13 @@ ipcMain.handle('dialog:openFolder', async () => {
 })
 
 // ─── IPC: Scan folder for MIDI files ─────────────────────────────────────────
+// Returns `null` when the folder is missing / unreadable so the renderer can
+// distinguish "folder gone" (preserve persisted entries) from "folder empty"
+// (drop entries).  Without this, unplugging a USB drive would silently wipe
+// the saved library.
 ipcMain.handle('fs:scanMidi', async (_event, folderPath: string) => {
   try {
+    if (!existsSync(folderPath)) return null
     const entries = readdirSync(folderPath, { withFileTypes: true })
     return entries
       .filter((e) => e.isFile() && /\.(mid|midi)$/i.test(e.name))
@@ -76,9 +81,49 @@ ipcMain.handle('fs:scanMidi', async (_event, folderPath: string) => {
         path: join(folderPath, e.name)
       }))
   } catch {
-    return []
+    return null
   }
 })
+
+// ─── IPC: Watch a folder for MIDI file changes ───────────────────────────────
+// Single watcher process-wide — switching folders closes the previous one.
+// `fs.watch` fires multiple events per file operation (especially on Windows
+// where editors write atomically), so we debounce before notifying the
+// renderer.  The renderer just re-scans on every signal.
+let folderWatcher:  FSWatcher              | null = null
+let folderWatchDebounce: NodeJS.Timeout    | null = null
+
+function stopWatching(): void {
+  if (folderWatcher) {
+    try { folderWatcher.close() } catch { /* already closed */ }
+    folderWatcher = null
+  }
+  if (folderWatchDebounce) {
+    clearTimeout(folderWatchDebounce)
+    folderWatchDebounce = null
+  }
+}
+
+ipcMain.handle('fs:watchFolder', (event, folderPath: string) => {
+  stopWatching()
+  if (!folderPath || !existsSync(folderPath)) return
+  try {
+    folderWatcher = watch(folderPath, { persistent: false }, (_evt, filename) => {
+      // Ignore unrelated files; only MIDI changes need a re-scan.
+      if (filename && !/\.(mid|midi)$/i.test(String(filename))) return
+      if (folderWatchDebounce) clearTimeout(folderWatchDebounce)
+      folderWatchDebounce = setTimeout(() => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('fs:folderChanged', folderPath)
+        }
+      }, 400)
+    })
+  } catch (err) {
+    console.warn('[watchFolder]', err)
+  }
+})
+
+ipcMain.handle('fs:unwatchFolder', () => stopWatching())
 
 // ─── IPC: Read a MIDI file by path ────────────────────────────────────────────
 ipcMain.handle('fs:readMidi', async (_event, filePath: string) => {
@@ -106,5 +151,6 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  stopWatching()
   if (process.platform !== 'darwin') app.quit()
 })

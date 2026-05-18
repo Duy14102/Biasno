@@ -2,7 +2,7 @@
 
 An interactive piano learning app — falling notes, sheet music, MIDI keyboard support, and real-time feedback. Built with Electron + React.
 
-UI is in Vietnamese; the app itself plays any standard MIDI file.
+UI is in Vietnamese / English; theme is dark / light (toggle in the home header). The app itself plays any standard MIDI file.
 
 ---
 
@@ -38,6 +38,7 @@ UI is in Vietnamese; the app itself plays any standard MIDI file.
 
 ### Audio / input
 - Web Audio engine with sample-based piano via `@tonejs/piano` and `soundfont-player`.
+- Animated splash screen on launch gates the app until the soundfont finishes loading — clicking a song before samples are ready is impossible.
 - 300 ms scheduling look-ahead so timing survives normal JS jitter.
 - MIDI keyboard input via Web MIDI API.
 - Computer keyboard fallback: `a w s e d f t g y h u j k o l p ;` → C4 → E5.
@@ -102,6 +103,12 @@ src/
     │
     ├── context/          AppContext — file list, midiFile, practiceSettings,
     │                     resumePoints (per-song), modePrefs (per-(song, mode)).
+    │                     ThemeContext — dark / light, persisted to localStorage.
+    │
+    ├── i18n/             LanguageContext + flat-dictionary `t(key, params)`.
+    │                     Per-language strings live in `locales/<code>.ts`;
+    │                     add a language by creating that file and registering
+    │                     it in `translations.ts` (Lang / LANGUAGES / DICTIONARIES).
     │
     ├── types/            Shared TypeScript types, split per domain:
     │   ├── midi.ts         Hand, MidiNote, MidiFileData
@@ -138,6 +145,9 @@ src/
     │   └── useViewSwap.ts        sheet ↔ falling-notes flip phase machine
     │
     └── components/       Reusable UI grouped by feature.
+        ├── AudioGate.tsx     splash screen that blocks the app until the
+        │                     soundfont finishes loading.
+        ├── LanguageToggle.tsx · ThemeToggle.tsx
         ├── ProgressBar.tsx
         ├── sheet/        SheetMusic + helpers (highlighting, noteRefs,
         │                 scrollToCursor, musicXmlBuilder, sheetPreload).

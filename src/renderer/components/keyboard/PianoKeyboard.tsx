@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback } from 'react'
 import {
-  PIANO_MIN, PIANO_MAX, TOTAL_WHITE_KEYS,
-  isBlackKey, getWhiteKeyIndex, getBlackKeyFraction,
+  isBlackKey, getWhiteKeyIndex, getBlackKeyLeftWhite,
+  PIANO_RANGES, type KeyCount,
 } from '../../utils/noteUtils'
 import type { Hand } from '../../types'
 
@@ -31,6 +31,26 @@ const KB_FLASH_CSS = `
 }
 .kb-flash-white { animation: kb-flash-white 180ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
 .kb-flash-black { animation: kb-flash-black 180ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+
+/* Idle hint: amber pulse on keys the player should press next.  Distinct
+   amber/gold tone keeps it readable against both hand colours and the
+   green/red hit feedback. */
+@keyframes kb-hint-pulse {
+  0%, 100% { opacity: 0.30; transform: scale(1);    }
+  50%      { opacity: 0.85; transform: scale(1.02); }
+}
+.kb-hint-white {
+  animation: kb-hint-pulse 1.1s ease-in-out infinite;
+  background: linear-gradient(to bottom, rgba(250,204,21,0.35) 0%, rgba(245,158,11,0.85) 100%);
+  box-shadow: 0 0 14px 3px rgba(250,204,21,0.55), inset 0 0 0 2px rgba(245,158,11,0.85);
+  transform-origin: bottom center;
+}
+.kb-hint-black {
+  animation: kb-hint-pulse 1.1s ease-in-out infinite;
+  background: linear-gradient(to bottom, rgba(250,204,21,0.55) 0%, rgba(245,158,11,0.95) 100%);
+  box-shadow: 0 0 12px 2px rgba(250,204,21,0.6), inset 0 0 0 1.5px rgba(245,158,11,0.9);
+  transform-origin: bottom center;
+}
 `
 
 interface KeyHighlight {
@@ -44,9 +64,13 @@ interface KeyHighlight {
 
 interface PianoKeyboardProps {
   activeKeys: Map<number, KeyHighlight>
+  // MIDI numbers to pulse-highlight as a "press this next" hint.  Hint never
+  // wins over an actual press: keys present in activeKeys suppress the hint.
+  hintKeys?:  Set<number>
   onKeyDown?: (midi: number) => void
   onKeyUp?: (midi: number) => void
   height?: number
+  keyCount?: KeyCount  // 88 (default) | 76 | 61
 }
 
 const COLORS = {
@@ -67,17 +91,19 @@ function getKeyColor(midi: number, highlight: KeyHighlight | undefined): string 
 }
 
 export default function PianoKeyboard({
-  activeKeys, onKeyDown, onKeyUp, height = 200
+  activeKeys, hintKeys, onKeyDown, onKeyUp, height = 200, keyCount = 88,
 }: PianoKeyboardProps): React.JSX.Element {
+  const range = PIANO_RANGES[keyCount]
+
   const { whiteKeys, blackKeys } = useMemo(() => {
     const whites: number[] = [], blacks: number[] = []
-    for (let m = PIANO_MIN; m <= PIANO_MAX; m++) {
+    for (let m = range.min; m <= range.max; m++) {
       isBlackKey(m) ? blacks.push(m) : whites.push(m)
     }
     return { whiteKeys: whites, blackKeys: blacks }
-  }, [])
+  }, [range.min, range.max])
 
-  const wPct  = 100 / TOTAL_WHITE_KEYS
+  const wPct  = 100 / range.totalWhite
   const bwPct = wPct * 0.63
   const bh    = height * 0.63
 
@@ -93,11 +119,12 @@ export default function PianoKeyboard({
 
       {/* White keys */}
       {whiteKeys.map((midi) => {
-        const idx      = getWhiteKeyIndex(midi)
+        const idx      = getWhiteKeyIndex(midi) - range.whiteOffset
         const left     = idx * wPct
         const hl       = activeKeys.get(midi)
         const color    = getKeyColor(midi, hl)
         const isActive = !!hl
+        const isHint   = !isActive && !!hintKeys?.has(midi)
         const noteName = WHITE_NOTE_NAMES[midi % 12]
 
         return (
@@ -147,6 +174,20 @@ export default function PianoKeyboard({
               />
             )}
 
+            {/* Idle-hint pulse: amber overlay that loops until any key is pressed. */}
+            {isHint && (
+              <span
+                className="kb-hint-white"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '0 0 5px 5px',
+                  pointerEvents: 'none',
+                  zIndex: 3,
+                }}
+              />
+            )}
+
             {/* Note name label at bottom of each white key */}
             {noteName && (
               <span style={{
@@ -172,7 +213,7 @@ export default function PianoKeyboard({
 
       {/* Octave number label (small, below note name) for C keys */}
       {whiteKeys.filter((m) => m % 12 === 0).map((midi) => {
-        const idx  = getWhiteKeyIndex(midi)
+        const idx  = getWhiteKeyIndex(midi) - range.whiteOffset
         const left = idx * wPct
         return (
           <div
@@ -195,11 +236,12 @@ export default function PianoKeyboard({
 
       {/* Black keys */}
       {blackKeys.map((midi) => {
-        const frac     = getBlackKeyFraction(midi)
+        const frac     = (getBlackKeyLeftWhite(midi) - range.whiteOffset + 0.70) / range.totalWhite
         const left     = frac * 100
         const hl       = activeKeys.get(midi)
         const color    = getKeyColor(midi, hl)
         const isActive = !!hl
+        const isHint   = !isActive && !!hintKeys?.has(midi)
 
         return (
           <div
@@ -234,6 +276,19 @@ export default function PianoKeyboard({
                   position: 'absolute',
                   inset: 0,
                   background: '#ffffff',
+                  borderRadius: '0 0 4px 4px',
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
+
+            {/* Idle-hint pulse on black keys. */}
+            {isHint && (
+              <span
+                className="kb-hint-black"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
                   borderRadius: '0 0 4px 4px',
                   pointerEvents: 'none',
                 }}

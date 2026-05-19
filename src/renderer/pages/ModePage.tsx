@@ -4,6 +4,13 @@ import { useAppContext } from '../context/AppContext'
 import { useLanguage } from '../i18n/LanguageContext'
 import type { TranslationKey } from '../i18n/translations'
 import type { PracticeMode } from '../types'
+import {
+  BackIcon, ArrowRightIcon, CountdownIcon,
+  RightHandIcon, LeftHandIcon, BothHandsIcon,
+  EyeIcon, MusicNoteIcon, MetronomeIcon, TargetIcon,
+} from '../components/header/icons'
+
+type IconCmp = React.FC<{ className?: string }>
 
 // ─── Hand themes ──────────────────────────────────────────────────────────────
 // Colours mirror the practice page (treble = blue, bass = orange, both = green)
@@ -14,7 +21,8 @@ type Skill = 'melody' | 'rhythm' | 'melody-rhythm'
 
 interface HandTheme {
   labelKey:   TranslationKey
-  emoji:      string
+  Icon:       IconCmp
+  iconColor:  string   // tailwind class for the badge icon colour
   // Section heading style
   iconBg:     string
   iconRing:   string
@@ -28,7 +36,8 @@ interface HandTheme {
 const HAND_THEMES: Record<Hand, HandTheme> = {
   right: {
     labelKey:   'rightHand',
-    emoji:      '🫱',
+    Icon:       RightHandIcon,
+    iconColor:  'text-blue-600 dark:text-blue-300',
     iconBg:     'bg-blue-200 dark:bg-blue-500/15',
     iconRing:   'ring-blue-400 dark:ring-blue-400/40',
     rule:       'border-blue-400 dark:border-blue-500/30',
@@ -38,7 +47,8 @@ const HAND_THEMES: Record<Hand, HandTheme> = {
   },
   left: {
     labelKey:   'leftHand',
-    emoji:      '🫲',
+    Icon:       LeftHandIcon,
+    iconColor:  'text-orange-600 dark:text-orange-300',
     iconBg:     'bg-orange-200 dark:bg-orange-500/15',
     iconRing:   'ring-orange-400 dark:ring-orange-400/40',
     rule:       'border-orange-400 dark:border-orange-500/30',
@@ -48,7 +58,8 @@ const HAND_THEMES: Record<Hand, HandTheme> = {
   },
   both: {
     labelKey:   'bothHands',
-    emoji:      '🙌',
+    Icon:       BothHandsIcon,
+    iconColor:  'text-emerald-600 dark:text-emerald-300',
     iconBg:     'bg-emerald-200 dark:bg-emerald-500/15',
     iconRing:   'ring-emerald-400 dark:ring-emerald-400/40',
     rule:       'border-emerald-400 dark:border-emerald-500/30',
@@ -59,16 +70,16 @@ const HAND_THEMES: Record<Hand, HandTheme> = {
 }
 
 interface SkillInfo {
-  key:     Skill
+  key:      Skill
   labelKey: TranslationKey
   descKey:  TranslationKey
-  icon:     string
+  Icon:     IconCmp
 }
 
 const SKILLS: SkillInfo[] = [
-  { key: 'melody',         labelKey: 'melody',       descKey: 'skillMelodyDesc', icon: '🎵' },
-  { key: 'rhythm',         labelKey: 'rhythm',       descKey: 'skillRhythmDesc', icon: '🥁' },
-  { key: 'melody-rhythm',  labelKey: 'melodyRhythm', descKey: 'skillBothDesc',   icon: '🎯' },
+  { key: 'melody',         labelKey: 'melody',       descKey: 'skillMelodyDesc', Icon: MusicNoteIcon },
+  { key: 'rhythm',         labelKey: 'rhythm',       descKey: 'skillRhythmDesc', Icon: MetronomeIcon },
+  { key: 'melody-rhythm',  labelKey: 'melodyRhythm', descKey: 'skillBothDesc',   Icon: TargetIcon    },
 ]
 
 const HANDS: Hand[] = ['right', 'left', 'both']
@@ -126,10 +137,10 @@ export default function ModePage(): React.JSX.Element {
       >
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-700 hover:text-slate-900 hover:bg-slate-200 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-700/60 transition-colors text-sm font-medium"
+          className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-700 hover:text-slate-900 hover:bg-slate-200 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-700/60 transition-colors text-sm font-medium"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <span>←</span>
+          <BackIcon className="w-4 h-4 transition-transform duration-150 group-hover:-translate-x-0.5" />
           <span>{t('back')}</span>
         </button>
         <div className="w-px h-6 bg-slate-300 dark:bg-slate-700/60" />
@@ -148,8 +159,8 @@ export default function ModePage(): React.JSX.Element {
           {/* Resume banner — only for THIS song, with prominent CTA. */}
           {resumePoint && (
             <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-200 via-blue-100 to-white dark:from-blue-900/30 dark:via-blue-800/15 dark:to-transparent border border-blue-400 dark:border-blue-700/40 flex items-center gap-4 shadow-lg shadow-blue-500/10 dark:shadow-blue-900/20">
-              <div className="w-12 h-12 rounded-xl bg-blue-100 ring-1 ring-blue-300 dark:bg-blue-500/15 dark:ring-blue-400/40 flex items-center justify-center text-2xl shrink-0">
-                ⏱
+              <div className="w-12 h-12 rounded-xl bg-blue-100 ring-1 ring-blue-300 dark:bg-blue-500/15 dark:ring-blue-400/40 flex items-center justify-center text-blue-600 dark:text-blue-300 shrink-0">
+                <CountdownIcon className="w-6 h-6" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-slate-900 dark:text-white font-semibold text-sm">
@@ -193,8 +204,8 @@ export default function ModePage(): React.JSX.Element {
             className="w-full mb-7 text-left p-5 rounded-2xl border border-violet-400 hover:border-violet-600 bg-gradient-to-br from-violet-200 via-purple-100 to-fuchsia-200 hover:from-violet-300 hover:via-purple-200 hover:to-fuchsia-300 dark:border-violet-500/40 dark:hover:border-violet-400/80 dark:from-violet-700/40 dark:via-purple-700/25 dark:to-fuchsia-700/30 dark:hover:from-violet-700/55 dark:hover:via-purple-700/40 dark:hover:to-fuchsia-700/45 hover:shadow-xl hover:shadow-violet-500/30 transition-[background,border-color,box-shadow] duration-200 group relative overflow-hidden"
           >
             <div className="flex items-center gap-4 relative z-10">
-              <div className="w-14 h-14 rounded-2xl bg-violet-200 ring-1 ring-violet-300 dark:bg-violet-500/20 dark:ring-violet-400/40 flex items-center justify-center text-3xl shadow-lg shrink-0">
-                👁
+              <div className="w-14 h-14 rounded-2xl bg-violet-200 ring-1 ring-violet-300 dark:bg-violet-500/20 dark:ring-violet-400/40 flex items-center justify-center text-violet-600 dark:text-violet-200 shadow-lg shrink-0">
+                <EyeIcon className="w-7 h-7" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -207,13 +218,13 @@ export default function ModePage(): React.JSX.Element {
                   {t('viewAndListenDesc')}
                 </p>
               </div>
-              <span className="self-center text-2xl text-violet-500 dark:text-violet-300 group-hover:translate-x-1 transition-transform shrink-0">
-                →
+              <span className="self-center text-violet-500 dark:text-violet-300 group-hover:translate-x-1 transition-transform shrink-0">
+                <ArrowRightIcon className="w-6 h-6" />
               </span>
             </div>
             {/* Decorative oversized icon in the bottom-right */}
-            <div className="absolute -right-3 -bottom-6 text-[7rem] leading-none opacity-[0.06] pointer-events-none select-none">
-              👁
+            <div className="absolute -right-3 -bottom-6 text-violet-700 dark:text-violet-200 opacity-[0.08] pointer-events-none select-none">
+              <EyeIcon className="w-28 h-28" />
             </div>
           </button>
 
@@ -226,11 +237,11 @@ export default function ModePage(): React.JSX.Element {
                 <div className="flex items-center gap-3 mb-3">
                   <div
                     className={[
-                      'w-9 h-9 rounded-lg ring-1 flex items-center justify-center text-lg shrink-0',
-                      theme.iconBg, theme.iconRing,
+                      'w-9 h-9 rounded-lg ring-1 flex items-center justify-center shrink-0',
+                      theme.iconBg, theme.iconRing, theme.iconColor,
                     ].join(' ')}
                   >
-                    {theme.emoji}
+                    <theme.Icon className="w-5 h-5" />
                   </div>
                   <h2 className="text-base font-bold text-slate-900 dark:text-white">{t(theme.labelKey)}</h2>
                   <div className={`flex-1 border-t border-dashed ${theme.rule}`} />
@@ -271,6 +282,7 @@ function SkillCard({
   onSelect: () => void
 }): React.JSX.Element {
   const { t } = useLanguage()
+  const SkillIcon = skill.Icon
   return (
     <button
       onClick={onSelect}
@@ -288,18 +300,18 @@ function SkillCard({
     >
       <div className="relative z-10">
         <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-xl">{skill.icon}</span>
+          <span className={theme.iconColor}><SkillIcon className="w-5 h-5" /></span>
           <span className="font-bold text-slate-900 dark:text-white text-sm leading-tight">{t(skill.labelKey)}</span>
         </div>
         <p className="text-slate-600 dark:text-white/65 text-xs leading-snug">{t(skill.descKey)}</p>
       </div>
       {/* Decorative oversized icon — nearly invisible, just adds texture */}
-      <div className="absolute -right-3 -bottom-4 text-6xl leading-none opacity-[0.10] dark:opacity-[0.06] pointer-events-none select-none">
-        {skill.icon}
+      <div className={`absolute -right-3 -bottom-4 ${theme.iconColor} opacity-[0.14] dark:opacity-[0.08] pointer-events-none select-none`}>
+        <SkillIcon className="w-24 h-24" />
       </div>
       {/* Subtle arrow that slides on hover */}
-      <span className="absolute right-3 top-3 text-slate-400 group-hover:text-slate-600 dark:text-white/30 dark:group-hover:text-white/70 group-hover:translate-x-0.5 transition-all text-sm">
-        →
+      <span className="absolute right-3 top-3 text-slate-400 group-hover:text-slate-600 dark:text-white/30 dark:group-hover:text-white/70 group-hover:translate-x-0.5 transition-[color,transform]">
+        <ArrowRightIcon className="w-3.5 h-3.5" />
       </span>
     </button>
   )

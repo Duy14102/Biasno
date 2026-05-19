@@ -98,10 +98,14 @@ function SheetMusic({
   const toggleDarkSheet = useCallback(() => setDarkSheet(v => !v), [])
 
   // Block wheel + touch scroll while the lock is on.  Non-passive listeners
-  // are required for preventDefault() to actually cancel.
+  // are required for preventDefault() to actually cancel.  Also snap back to
+  // the cursor when the lock flips on, in case the user scrolled away while
+  // it was off — otherwise the next scroll wouldn't happen until the cursor
+  // advanced to a new step.
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !autoScroll) return
+    if (loadedRef.current) scrollToCursor(el, true)
     const block = (e: Event) => e.preventDefault()
     el.addEventListener('wheel',     block, { passive: false })
     el.addEventListener('touchmove', block, { passive: false })
@@ -240,6 +244,45 @@ function SheetMusic({
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [currentTimeRef])
+
+  // ── Width re-render ───────────────────────────────────────────────────────
+  // OSMD preloads at the window width at the time the file was picked, with
+  // autoResize: false.  When the user toggles fullscreen (or resizes), the
+  // SVG keeps its old narrow width, leaving white space on the right.  We
+  // observe the wrapper and re-render the active OSMD instance when its
+  // available width changes.
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    let prevWidth = el.clientWidth
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const rerender = (): void => {
+      const osmd = osmdRef.current
+      if (!osmd || !loadedRef.current) return
+      try {
+        clearHighlights(prevHighRef.current)
+        prevHighKeyRef.current = ''
+        osmd.render()
+        osmd.cursor.show()
+        noteRefsRef.current = collectNoteRefs(osmd, bpm)
+        const steps  = stepsRef.current
+        const target = steps.length ? bsearchStep(steps, currentTimeRef.current) : 0
+        osmd.cursor.reset()
+        for (let i = 0; i < target; i++) osmd.cursor.next()
+        stepIdxRef.current = target
+        if (autoScrollRef.current) scrollToCursor(scrollRef.current, true)
+      } catch (e) { console.error('[SheetMusic resize re-render]', e) }
+    }
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth
+      if (w === 0 || w === prevWidth) return
+      prevWidth = w
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(rerender, 150)
+    })
+    ro.observe(el)
+    return () => { ro.disconnect(); if (timer) clearTimeout(timer) }
+  }, [bpm, currentTimeRef])
 
   // ── Note highlighting ─────────────────────────────────────────────────────
   // Triggered by activeKeys changes (~4–8 Hz at note boundaries) rather than

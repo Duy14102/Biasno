@@ -1,15 +1,13 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useAppContext } from '../context/AppContext'
-import { useMIDIDevice }  from '../hooks/useMIDIDevice'
+import { useMidi }        from '../context/MidiContext'
 import { useFileLibrary } from '../components/library/useFileLibrary'
 import { audioEngine }    from '../audio/AudioEngine'
 import FileRow            from '../components/library/FileRow'
-import DevicePanel        from '../components/library/DevicePanel'
-import KeyboardHint       from '../components/library/KeyboardHint'
+import MidiDevicePicker   from '../components/library/MidiDevicePicker'
 import DeleteConfirmModal from '../components/library/DeleteConfirmModal'
 import FolderConflictModal from '../components/library/FolderConflictModal'
-import LanguageToggle     from '../components/LanguageToggle'
-import ThemeToggle        from '../components/ThemeToggle'
+import HomeSettings       from '../components/HomeSettings'
 import { useLanguage }    from '../i18n/LanguageContext'
 
 // ─── Page-scoped keyframes ───────────────────────────────────────────────────
@@ -31,13 +29,14 @@ export default function HomePage(): React.JSX.Element {
   const { fileList, folderPath } = useAppContext()
   const { t }                    = useLanguage()
 
-  // MIDI input device — clicking a key on a connected keyboard plays the
-  // corresponding piano sample through the shared audio engine.
-  const { supported: midiSupported, devices, connectedId, connect, error: midiError } =
-    useMIDIDevice((midi, vel, on) => {
-      if (on) audioEngine.noteOn(midi, vel)
-      else    audioEngine.noteOff(midi)
-    })
+  // Subscribe an audio-preview handler on the home page so pressing a key on
+  // a connected MIDI keyboard plays the piano sample. The subscription is
+  // page-scoped — PracticePage replaces it with the matcher.
+  const { subscribe, globalError: midiError } = useMidi()
+  useEffect(() => subscribe((midi, vel, on) => {
+    if (on) audioEngine.noteOn(midi, vel)
+    else    audioEngine.noteOff(midi)
+  }), [subscribe])
 
   // Hover state — picked up by FileRow to show the delete affordance and
   // swap the leading icon to music bars on the active row.
@@ -81,11 +80,8 @@ export default function HomePage(): React.JSX.Element {
 
         <div className="flex-1" />
 
-        {/* Theme toggle — left of the language toggle. */}
-        <ThemeToggle />
-
-        {/* Language toggle — pinned to the far right of the header. */}
-        <LanguageToggle />
+        {/* Combined settings popover — gear button opens theme + language. */}
+        <HomeSettings />
       </header>
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
@@ -95,60 +91,9 @@ export default function HomePage(): React.JSX.Element {
         <main className="flex-1 flex flex-col items-center justify-center px-8 py-6 overflow-y-auto">
           <div className="w-full max-w-md flex flex-col gap-5">
 
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t('midiDevicesHeading')}
-              </span>
-              <div className="flex-1 h-px bg-slate-300/70 dark:bg-slate-700/50" />
-            </div>
-
-            {!midiSupported ? (
-              <DevicePanel state="unsupported" />
-            ) : devices.length === 0 ? (
-              <DevicePanel state="none" />
-            ) : (
-              <div className="w-full flex flex-col gap-2.5">
-                {devices.map((dev) => {
-                  const isConn = connectedId === dev.id
-                  return (
-                    <button
-                      key={dev.id}
-                      onClick={() => connect(isConn ? '__none__' : dev.id)}
-                      className={[
-                        'w-full flex items-center gap-3 p-3.5 rounded-xl border',
-                        'transition-[background-color,border-color,box-shadow] duration-150',
-                        isConn
-                          ? 'bg-blue-50 border-blue-400 shadow-lg shadow-blue-500/15 dark:bg-blue-600/15 dark:border-blue-500/50'
-                          : 'bg-white border-slate-300 hover:bg-slate-50 hover:border-slate-400 dark:bg-slate-800/60 dark:border-slate-700/50 dark:hover:bg-slate-800 dark:hover:border-slate-600',
-                      ].join(' ')}
-                    >
-                      <div className={[
-                        'w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0',
-                        isConn ? 'bg-blue-600 shadow-md shadow-blue-500/30' : 'bg-slate-200 dark:bg-slate-700/80',
-                      ].join(' ')}>
-                        🎹
-                      </div>
-                      <div className="text-left flex-1 min-w-0">
-                        <p className={['font-semibold truncate text-sm', isConn ? 'text-blue-900 dark:text-white' : 'text-slate-700 dark:text-slate-200'].join(' ')}>
-                          {dev.name}
-                        </p>
-                        <p className={['text-xs mt-0.5', isConn ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500'].join(' ')}>
-                          {isConn ? t('deviceConnected') : t('deviceClickToConnect')}
-                        </p>
-                      </div>
-                      <div className={[
-                        'w-2.5 h-2.5 rounded-full flex-shrink-0',
-                        isConn ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-slate-300 dark:bg-slate-600',
-                      ].join(' ')} />
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+            <MidiDevicePicker />
 
             {midiError && <p className="text-xs text-red-600 dark:text-red-400 text-center">{midiError}</p>}
-
-            <KeyboardHint />
 
             {lib.error && (
               <div className="px-4 py-3 bg-red-100 border border-red-300 text-red-700 dark:bg-red-900/25 dark:border-red-700/50 dark:text-red-300 rounded-lg text-sm">

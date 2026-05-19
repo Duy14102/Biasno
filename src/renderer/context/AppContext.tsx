@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import type { MidiFileData, PracticeSettings, PracticeMode } from '../types'
 
-const LS_FILE_LIST    = 'biasno.fileList'
-const LS_FOLDER_PATH  = 'biasno.folderPath'
-const LS_HIDDEN_PATHS = 'biasno.hiddenPaths'
+const LS_FILE_LIST     = 'biasno.fileList'
+const LS_FOLDER_PATH   = 'biasno.folderPath'
+const LS_HIDDEN_PATHS  = 'biasno.hiddenPaths'
+export const LS_RESUME_POINTS = 'biasno.resumePoints'
 
 function loadFileList(): FileEntry[] {
   try {
@@ -25,6 +26,15 @@ function loadHiddenPaths(): Set<string> {
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? new Set(parsed) : new Set()
   } catch { return new Set() }
+}
+
+function loadResumePoints(): ResumePoints {
+  try {
+    const raw = localStorage.getItem(LS_RESUME_POINTS)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {}
+  } catch { return {} }
 }
 
 export interface FileEntry {
@@ -130,7 +140,11 @@ export function AppProvider({ children }: { children: React.ReactNode }): React.
       const next = new Set(prev); next.delete(path); return next
     })
   }, [])
-  const [resumePoints,     setAllResumePoints] = useState<ResumePoints>({})
+  const [resumePoints,     setAllResumePoints] = useState<ResumePoints>(loadResumePoints)
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_RESUME_POINTS, JSON.stringify(resumePoints)) } catch { /* quota */ }
+  }, [resumePoints])
   const [modePrefs,        setAllModePrefs]    = useState<Partial<Record<string, ModePrefs>>>({})
 
   const updateFileList = useCallback((fn: (prev: FileEntry[]) => FileEntry[]) => {

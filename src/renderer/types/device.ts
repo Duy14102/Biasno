@@ -1,5 +1,5 @@
 // ─── MIDI device types ──────────────────────────────────────────────────────
-// What the Web MIDI hook (`useMIDIDevice`) returns about connected hardware.
+// What MidiContext exposes about connected hardware.
 
 export interface MidiDevice {
   id:   string

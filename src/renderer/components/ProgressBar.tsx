@@ -13,15 +13,17 @@ type DragMode = 'seek' | 'loop-start' | 'loop-end' | 'loop-move' | null
 
 const ANIM_CSS = `
   @keyframes pb-shimmer {
-    0%   { left: -40%; }
-    100% { left: 130%; }
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
   }
-  @keyframes pb-glow {
-    0%, 100% { box-shadow: 0 0 0 3px rgba(96,165,250,0.45), 0 2px 8px rgba(0,0,0,0.4); }
-    50%       { box-shadow: 0 0 0 6px rgba(96,165,250,0.18), 0 0 16px rgba(59,130,246,0.55); }
+  @keyframes pb-fade-in {
+    from { opacity: 0; transform: translate(-50%, 4px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
   }
-  .pb-shimmer { animation: pb-shimmer 2.4s ease-in-out infinite; }
-  .pb-glow    { animation: pb-glow 2s ease-in-out infinite; }
+  .pb-shimmer   { animation: pb-shimmer 2.8s ease-in-out infinite; }
+  .pb-tooltip   { animation: pb-fade-in 0.14s ease-out forwards; }
+  .pb-track     { transition: height 0.18s cubic-bezier(0.4,0,0.2,1); }
+  .pb-head      { transition: transform 0.18s cubic-bezier(0.4,0,0.2,1), box-shadow 0.18s ease-out; }
 `
 
 function formatTime(s: number): string {
@@ -36,15 +38,16 @@ export default function ProgressBar({
   const barRef        = useRef<HTMLDivElement>(null)
   const [dragMode, setDragMode]   = useState<DragMode>(null)
   const [hovering, setHovering]   = useState(false)
-  // Live cursor-x fraction (0–1) while the mouse is over the bar — drives the
-  // floating time tooltip.  Null when the cursor is elsewhere so the tooltip
-  // disappears cleanly.
   const [hoverFrac, setHoverFrac] = useState<number | null>(null)
+  // Toggle between "elapsed / total" and "elapsed / -remaining" by clicking
+  // the right-hand time label — common pattern in media players.
+  const [showRemaining, setShowRemaining] = useState(false)
   const dragStartX    = useRef(0)
   const dragStartLoop = useRef<LoopRegion | null>(null)
 
   const progress   = duration > 0 ? Math.min(1, currentTime / duration) : 0
   const isDragging = dragMode !== null
+  const active     = isDragging || hovering
 
   const xToFraction = useCallback((clientX: number): number => {
     const bar = barRef.current
@@ -59,7 +62,7 @@ export default function ProgressBar({
     const bar  = barRef.current
     if (!bar) return
     const rect    = bar.getBoundingClientRect()
-    const hitZone = 10 / rect.width
+    const hitZone = 12 / rect.width
 
     if (loopRegion && e.shiftKey) { onLoopChange(null); return }
 
@@ -83,6 +86,7 @@ export default function ProgressBar({
       const frac = xToFraction(e.clientX)
       if (dragMode === 'seek') {
         onSeek(frac * duration)
+        setHoverFrac(frac)
       } else if (dragMode === 'loop-start' && loopRegion) {
         onLoopChange({ start: Math.min(frac, loopRegion.end - 0.01), end: loopRegion.end })
       } else if (dragMode === 'loop-end' && loopRegion) {
@@ -103,76 +107,99 @@ export default function ProgressBar({
     }
   }, [dragMode, xToFraction, duration, loopRegion, onSeek, onLoopChange])
 
-  const active = isDragging || hovering
-  const headSize = active ? 22 : 18
+  const cursorStyle =
+    dragMode === 'loop-start' || dragMode === 'loop-end' ? 'ew-resize'
+    : dragMode === 'loop-move' ? 'grabbing'
+    : 'pointer'
 
   return (
     <>
       <style>{ANIM_CSS}</style>
       <div
-        className="flex items-center gap-3 px-4 bg-white dark:bg-slate-900 dark:bg-gradient-to-b dark:from-slate-900 dark:to-slate-950 border-b border-slate-300 dark:border-slate-700/60 select-none"
-        style={{ height: 48 }}
+        className="flex items-center gap-4 px-5 bg-white dark:bg-slate-900 dark:bg-gradient-to-b dark:from-slate-900 dark:to-slate-950 border-b border-slate-300 dark:border-slate-700/60 select-none"
+        style={{ height: 52 }}
       >
-        {/* Current time — slightly larger / brighter so it pops against the
-            track. Tabular-nums keeps the digits from jitterring as time ticks. */}
-        <span className="text-sm font-mono font-semibold text-slate-700 dark:text-slate-100 tabular-nums w-12 text-right shrink-0">
+        {/* Elapsed time */}
+        <span className="text-[13px] font-mono font-semibold text-slate-800 dark:text-slate-50 tabular-nums w-14 text-right shrink-0 tracking-tight">
           {formatTime(currentTime)}
         </span>
 
         {/* ── Track ─────────────────────────────────────────────────────── */}
         <div
           ref={barRef}
-          className="relative flex-1 rounded-full cursor-pointer group"
-          style={{ height: 10 }}
+          className="relative flex-1 group"
+          style={{ height: 24, cursor: cursorStyle }}
           onMouseDown={handleMouseDown}
           onMouseEnter={() => setHovering(true)}
           onMouseLeave={() => { setHovering(false); setHoverFrac(null) }}
           onMouseMove={(e) => { if (!isDragging) setHoverFrac(xToFraction(e.clientX)) }}
         >
-          {/* Background track — inset shadow gives a subtle "groove" feel. */}
+          {/* Background track — taller hit-area; visible track sits centred. */}
           <div
             className={[
-              'absolute inset-0 rounded-full transition-colors duration-150',
-              active ? 'bg-slate-300 dark:bg-slate-600' : 'bg-slate-200 dark:bg-slate-800',
+              'pb-track absolute left-0 right-0 top-1/2 -translate-y-1/2 rounded-full',
+              active
+                ? 'bg-slate-300/90 dark:bg-slate-700'
+                : 'bg-slate-200 dark:bg-slate-800',
             ].join(' ')}
-            style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)' }}
+            style={{
+              height: active ? 8 : 6,
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.18)',
+            }}
           />
 
-          {/* Loop region */}
+          {/* Loop region (under the playhead, above the track) */}
           {loopRegion && (
             <>
               <div
-                className="absolute top-0 h-full rounded border-l-2 border-r-2 border-amber-400/90"
+                className="absolute top-1/2 -translate-y-1/2 rounded-full"
                 style={{
                   left:       `${loopRegion.start * 100}%`,
                   width:      `${(loopRegion.end - loopRegion.start) * 100}%`,
-                  background: 'rgba(251,191,36,0.18)'
+                  height:     active ? 8 : 6,
+                  background: 'linear-gradient(180deg, rgba(251,191,36,0.32), rgba(245,158,11,0.22))',
+                  boxShadow:  '0 0 0 1px rgba(251,191,36,0.55) inset',
                 }}
               />
               {[loopRegion.start, loopRegion.end].map((pos, i) => (
                 <div
                   key={i}
-                  className="absolute top-1/2 -translate-y-1/2 w-3 h-6 bg-amber-400 rounded-sm cursor-ew-resize shadow-md shadow-amber-500/30"
-                  style={{ left: `calc(${pos * 100}% - 6px)`, zIndex: 10 }}
-                />
+                  className="absolute top-1/2 -translate-y-1/2 rounded-[3px] bg-amber-400 shadow-md shadow-amber-500/40 ring-2 ring-white/70 dark:ring-slate-900/80 flex flex-col items-center justify-center gap-[2px]"
+                  style={{
+                    width: 6,
+                    height: 14,
+                    left: `calc(${pos * 100}% - 3px)`,
+                    cursor: 'ew-resize',
+                    zIndex: 10,
+                  }}
+                  title={i === 0 ? 'Loop start' : 'Loop end'}
+                >
+                  <span className="block w-[2px] h-[2px] rounded-full bg-amber-900/50" />
+                  <span className="block w-[2px] h-[2px] rounded-full bg-amber-900/50" />
+                </div>
               ))}
             </>
           )}
 
-          {/* Progress fill + shimmer */}
+          {/* Progress fill */}
           <div
-            className="absolute left-0 top-0 h-full rounded-full overflow-hidden transition-none"
+            className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full overflow-hidden"
             style={{
               width:      `${progress * 100}%`,
-              background: 'linear-gradient(90deg,#2563eb 0%,#3b82f6 60%,#60a5fa 100%)',
-              boxShadow:  progress > 0 ? '0 0 12px rgba(59,130,246,0.4)' : 'none',
+              height:     active ? 8 : 6,
+              background: 'linear-gradient(90deg,#2563eb 0%,#3b82f6 55%,#60a5fa 100%)',
+              boxShadow:  progress > 0
+                ? (active
+                  ? '0 0 14px rgba(59,130,246,0.55), 0 1px 2px rgba(37,99,235,0.4)'
+                  : '0 0 8px rgba(59,130,246,0.35)')
+                : 'none',
             }}
           >
-            {progress > 0 && (
+            {progress > 0 && progress < 1 && (
               <div
-                className="pb-shimmer absolute top-0 bottom-0 w-2/5"
+                className="pb-shimmer absolute inset-y-0 w-1/3"
                 style={{
-                  background: 'linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.28) 50%,transparent 100%)'
+                  background: 'linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.35) 50%,transparent 100%)',
                 }}
               />
             )}
@@ -181,40 +208,59 @@ export default function ProgressBar({
           {/* Hover preview marker — vertical hairline at cursor x. */}
           {hoverFrac !== null && !isDragging && (
             <div
-              className="absolute top-1/2 -translate-y-1/2 w-px h-5 bg-slate-500/60 dark:bg-slate-300/50 pointer-events-none"
-              style={{ left: `${hoverFrac * 100}%` }}
+              className="absolute top-1/2 -translate-y-1/2 w-px bg-slate-500/50 dark:bg-slate-300/40 pointer-events-none rounded-full"
+              style={{ left: `${hoverFrac * 100}%`, height: 16 }}
             />
           )}
 
           {/* Playhead */}
           <div
-            className={`absolute top-1/2 -translate-y-1/2 rounded-full bg-blue-600 dark:bg-white transition-none ${progress > 0 ? 'pb-glow' : ''}`}
+            className="pb-head absolute top-1/2 rounded-full bg-white dark:bg-white ring-[3px] ring-blue-500 dark:ring-blue-400 shadow-lg"
             style={{
-              width:  headSize,
-              height: headSize,
-              left:   `calc(${progress * 100}% - ${headSize / 2}px)`,
+              width:  16,
+              height: 16,
+              left:   `calc(${progress * 100}% - 8px)`,
+              top:    '50%',
+              transform: `translateY(-50%) scale(${active ? 1.18 : 1})`,
+              boxShadow: active
+                ? '0 0 0 6px rgba(59,130,246,0.18), 0 2px 8px rgba(0,0,0,0.35)'
+                : '0 2px 6px rgba(0,0,0,0.3)',
               zIndex: 5,
-              transition: isDragging ? 'none' : 'width 0.12s, height 0.12s'
             }}
           />
 
-          {/* Hover time tooltip — floats above the bar at cursor x. */}
-          {hoverFrac !== null && !isDragging && (
+          {/* Hover time tooltip — floats above the bar with a small caret. */}
+          {hoverFrac !== null && (
             <div
-              className="absolute -top-7 pointer-events-none z-20"
-              style={{ left: `${hoverFrac * 100}%`, transform: 'translateX(-50%)' }}
+              className="pb-tooltip absolute pointer-events-none z-20"
+              style={{ left: `${hoverFrac * 100}%`, bottom: 'calc(100% + 6px)', transform: 'translateX(-50%)' }}
             >
-              <div className="px-1.5 py-0.5 rounded bg-white text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-600/80 border text-[11px] font-mono tabular-nums shadow-lg whitespace-nowrap">
+              <div className="relative px-2 py-1 rounded-md bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[11px] font-mono font-semibold tabular-nums shadow-xl whitespace-nowrap">
                 {formatTime(hoverFrac * duration)}
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0"
+                  style={{
+                    borderLeft:  '4px solid transparent',
+                    borderRight: '4px solid transparent',
+                    borderTop:   '4px solid currentColor',
+                  }}
+                />
               </div>
             </div>
           )}
         </div>
 
-        {/* Total time */}
-        <span className="text-sm font-mono text-slate-500 tabular-nums w-12 shrink-0">
-          {formatTime(duration)}
-        </span>
+        {/* Total / remaining toggle */}
+        <button
+          type="button"
+          onClick={() => setShowRemaining((v) => !v)}
+          className="text-[13px] font-mono text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 tabular-nums w-14 text-left shrink-0 tracking-tight transition-colors cursor-pointer"
+          title={showRemaining ? 'Show total time' : 'Show remaining time'}
+        >
+          {showRemaining
+            ? `-${formatTime(Math.max(0, duration - currentTime))}`
+            : formatTime(duration)}
+        </button>
       </div>
     </>
   )

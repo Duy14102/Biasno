@@ -90,12 +90,24 @@ export function modeFullLabel(mode: PracticeMode, t: (k: TranslationKey) => stri
 }
 
 // ─── Shared dropdown enter animation ─────────────────────────────────────────
-// Tiny opacity + translateY fade-in.  No scale or filter — both would force
-// the browser to re-rasterise the text inside the dropdown panel.
+// Panel: opacity + translateY fade-in only.  No scale or filter on the panel
+// itself — both would force the browser to re-rasterise the text inside.
+// Items inside the panel get a separate stagger so the dropdown reads as
+// animating without blurring its own content.
 export const DROPDOWN_CSS = `
 @keyframes hdrDdEnter {
-  0%   { opacity: 0; transform: translateY(-4px); }
+  0%   { opacity: 0; transform: translateY(-8px); }
   100% { opacity: 1; transform: translateY(0); }
 }
-.hdr-dd-enter { animation: hdrDdEnter 140ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes hdrDdItem {
+  0%   { opacity: 0; transform: translateX(-6px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes hdrCaretDrop {
+  0%   { opacity: 0; transform: translateY(-3px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.hdr-dd-enter { animation: hdrDdEnter 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.hdr-dd-item  { animation: hdrDdItem 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.hdr-caret    { animation: hdrCaretDrop 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 `

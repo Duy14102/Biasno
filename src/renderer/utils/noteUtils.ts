@@ -1,7 +1,8 @@
 // ─── Piano key geometry + naming ─────────────────────────────────────────────
-// 88-key piano spans MIDI A0 (21) to C8 (108).  This module owns the static
-// lookup tables that PianoKeyboard / FallingNotes use to position keys and
-// label them, plus the small isBlackKey / midiToNoteName helpers.
+// Lookup tables are built once for the full 88-key range (A0..C8).  Smaller
+// keyboard variants (76 / 61) are sub-ranges of that table — components map
+// absolute white-key indices to local positions by subtracting `whiteOffset`
+// and dividing by the range's own `totalWhite`.
 
 export const PIANO_MIN = 21   // A0
 export const PIANO_MAX = 108  // C8
@@ -46,4 +47,47 @@ export function getWhiteKeyIndex(midi: number): number {
 export function getBlackKeyFraction(midi: number): number {
   const leftIdx = blackKeyLeftWhite[midi]
   return (leftIdx + 0.70) / TOTAL_WHITE_KEYS
+}
+
+/** Absolute white-key index (on the 88-key grid) of the left neighbour of a
+ *  black key.  Exposed so range-aware components can recompute the black-key
+ *  fraction relative to a sub-range's origin. */
+export function getBlackKeyLeftWhite(midi: number): number {
+  return blackKeyLeftWhite[midi]
+}
+
+// ─── Key-count variants ──────────────────────────────────────────────────────
+// Standard piano sizes: 88 (A0–C8), 76 (E1–G7), 61 (C2–C7).
+export type KeyCount = 88 | 76 | 61
+export const KEY_COUNTS: KeyCount[] = [88, 76, 61]
+
+export interface PianoRange {
+  min:         number  // lowest MIDI in the range
+  max:         number  // highest MIDI in the range
+  whiteOffset: number  // absolute white-key index of `min` (origin shift)
+  totalWhite:  number  // white keys in this range
+}
+
+function buildRange(min: number, max: number): PianoRange {
+  const whiteOffset = whiteKeyIndex[min]
+  let totalWhite = 0
+  for (let m = min; m <= max; m++) if (!isBlackKey(m)) totalWhite++
+  return { min, max, whiteOffset, totalWhite }
+}
+
+export const PIANO_RANGES: Record<KeyCount, PianoRange> = {
+  88: buildRange(21, 108),  // A0 → C8
+  76: buildRange(28, 103),  // E1 → G7
+  61: buildRange(36, 96),   // C2 → C7
+}
+
+/** Best-effort key-count detection from a MIDI device's name string.  Looks
+ *  for "88" / "76" / "61" tokens; falls back to 88 when nothing matches.
+ *  Reliable for any device that puts the size in its model name. */
+export function detectKeyCountFromName(name: string | null | undefined): KeyCount {
+  if (!name) return 88
+  if (/\b88\b/.test(name)) return 88
+  if (/\b76\b/.test(name)) return 76
+  if (/\b61\b/.test(name)) return 61
+  return 88
 }

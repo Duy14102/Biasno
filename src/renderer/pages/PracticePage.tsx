@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAppContext, modePrefsKey } from '../context/AppContext'
+import { useAppContext, modePrefsKey, LS_RESUME_POINTS } from '../context/AppContext'
 import { audioEngine }          from '../audio/AudioEngine'
 import { useAudioEngine }       from '../hooks/useAudioEngine'
 import { useAudioScheduler }    from '../practice/useAudioScheduler'
@@ -22,8 +22,11 @@ import FallingNotes, { type NoteRenderState } from '../components/falling/Fallin
 import SheetMusic     from '../components/sheet/SheetMusic'
 import ProgressBar    from '../components/ProgressBar'
 import PracticeHeader from '../components/header/PracticeHeader'
+import { PlayIcon } from '../components/header/icons'
 import type { MidiNote, LoopRegion, Hand, PracticeMode } from '../types'
 import { getActiveHands, requiresMelody } from '../utils/midiUtils'
+import { KEY_COUNTS, detectKeyCountFromName, type KeyCount } from '../utils/noteUtils'
+import { useMidi } from '../context/MidiContext'
 
 export default function PracticePage(): React.JSX.Element {
   const navigate = useNavigate()
@@ -69,6 +72,13 @@ export default function PracticePage(): React.JSX.Element {
   const [activeKeys, setActiveKeys] = useState<
     Map<number, { hand: Hand; hitState?: 'correct' | 'wrong'; time?: number }>
   >(() => new Map())
+
+  // Idle-hint: if the user hasn't pressed any key for IDLE_HINT_MS while
+  // playing in a practice mode, pulse the keys they should press next.  Any
+  // input, pause, seek, or mode change dismisses the hint and restarts the clock.
+  const IDLE_HINT_MS = 3000
+  const lastInputAtRef            = useRef<number>(performance.now())
+  const [hintKeys, setHintKeys]   = useState<Set<number>>(() => new Set())
 
   // Refs the playback engine reads/writes every frame.
   const isPlayingRef        = useRef(false)
@@ -181,11 +191,47 @@ export default function PracticePage(): React.JSX.Element {
     scheduleAudio,
   })
 
+  const handleInputBeat = useCallback(() => {
+    lastInputAtRef.current = performance.now()
+    setHintKeys((prev) => (prev.size ? new Set() : prev))
+  }, [])
+
   const { handleNoteInput } = usePracticeInput({
     isViewMode, needsMelody,
     isPlayingRef, currentTimeRef, noteStatesRef, holdingRef,
     setActiveKeys, setNoteStates, setIsPlaying, triggerFlash,
+    onInput: handleInputBeat,
   })
+
+  // Reset the idle clock when the user pauses/resumes or switches mode.  Same
+  // intent as any other input: we don't want a stale 5-second-old clock to
+  // immediately re-trigger the hint when play resumes.
+  useEffect(() => {
+    lastInputAtRef.current = performance.now()
+    setHintKeys((prev) => (prev.size ? new Set() : prev))
+  }, [isPlaying, mode])
+
+  // Tick the idle check.  Cheap (one Map walk every 250 ms, only when playing
+  // a practice mode), and cleared in view-listen since input is blocked.
+  useEffect(() => {
+    if (isViewMode) {
+      setHintKeys((prev) => (prev.size ? new Set() : prev))
+      return
+    }
+    const id = setInterval(() => {
+      if (!isPlayingRef.current) return
+      if (performance.now() - lastInputAtRef.current < IDLE_HINT_MS) return
+      const next = new Set<number>()
+      noteStatesRef.current.forEach((ns) => {
+        if (ns.visual === 'active') next.add(ns.note.midi)
+      })
+      setHintKeys((prev) => {
+        if (prev.size === next.size && [...next].every((m) => prev.has(m))) return prev
+        return next
+      })
+    }, 250)
+    return () => clearInterval(id)
+  }, [isViewMode])
 
   const { modeTransitioning, modeFlash, handleModeChange } = useModeChange({
     mode, setMode, midiFile, modePrefs,
@@ -338,6 +384,34 @@ export default function PracticePage(): React.JSX.Element {
   const handleZoomChange         = useCallback((val: number) => setZoom(val), [])
   const handleMeasureLinesToggle = useCallback(() => setMeasureLines(v => !v), [])
 
+  // Keyboard size — cycles 88 → 76 → 61 → 88.  Default 88 (full piano).
+  // When a real MIDI piano is connected, lock the size to whatever we can
+  // infer from the device name (digits "88" / "76" / "61"); otherwise stay
+  // on the user's last manual choice.  Persisted to localStorage so the
+  // setting survives song changes (PracticePage unmount) and app restarts.
+  const [manualKeyCount, setManualKeyCount] = useState<KeyCount>(() => {
+    const raw = localStorage.getItem('keyCount')
+    const n = Number(raw)
+    return (KEY_COUNTS as number[]).includes(n) ? (n as KeyCount) : 88
+  })
+  const { connectedId, devices } = useMidi()
+  const connectedDeviceName = useMemo(
+    () => (connectedId ? devices.find(d => d.id === connectedId)?.name ?? null : null),
+    [connectedId, devices],
+  )
+  const keyCountLocked = connectedId !== null
+  const keyCount: KeyCount = keyCountLocked
+    ? detectKeyCountFromName(connectedDeviceName)
+    : manualKeyCount
+  const handleKeyCountChange = useCallback(() => {
+    setManualKeyCount((prev) => {
+      const i = KEY_COUNTS.indexOf(prev)
+      const next = KEY_COUNTS[(i + 1) % KEY_COUNTS.length]
+      localStorage.setItem('keyCount', String(next))
+      return next
+    })
+  }, [])
+
   // ─── View-swap toggles (animated sheet ↔ falling notes) ───────────────────
   const handleSheetMusicToggle = useCallback(() => {
     swap.beginSwap(() => {
@@ -366,6 +440,28 @@ export default function PracticePage(): React.JSX.Element {
   // Cleanup on unmount — flash timers cleaned by useFlashTimer itself.
   useEffect(() => () => { audioEngine.stopMetronome() }, [])
 
+  // Save current playhead to localStorage on window close.  React state updates
+  // won't flush during `beforeunload`, so we write straight to localStorage
+  // using the same key AppContext owns.
+  useEffect(() => {
+    if (!midiFile) return
+    const flush = () => {
+      try {
+        const raw = localStorage.getItem(LS_RESUME_POINTS)
+        const prev = raw ? JSON.parse(raw) : {}
+        const next = { ...(prev && typeof prev === 'object' ? prev : {}),
+                       [midiFile.name]: { time: currentTimeRef.current, mode } }
+        localStorage.setItem(LS_RESUME_POINTS, JSON.stringify(next))
+      } catch { /* quota / parse */ }
+    }
+    window.addEventListener('beforeunload', flush)
+    window.addEventListener('pagehide',     flush)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      window.removeEventListener('pagehide',     flush)
+    }
+  }, [midiFile, mode])
+
   // ─── Guard (all hooks must run before this) ───────────────────────────────
   if (!practiceSettings || !midiFile) {
     return (
@@ -393,6 +489,8 @@ export default function PracticePage(): React.JSX.Element {
         volume={volume}
         zoom={zoom}
         measureLines={measureLines}
+        keyCount={keyCount}
+        keyCountLocked={keyCountLocked}
         onBack={handleBack}
         onPlayPause={transport.handlePlayPause}
         onRestart={transport.handleRestart}
@@ -409,6 +507,7 @@ export default function PracticePage(): React.JSX.Element {
         onZoomChange={handleZoomChange}
         onMeasureLinesToggle={handleMeasureLinesToggle}
         onModeChange={handleModeChange}
+        onKeyCountChange={handleKeyCountChange}
       />
 
       <ProgressBar
@@ -460,6 +559,7 @@ export default function PracticePage(): React.JSX.Element {
                   practiceMode={!isViewMode}
                   zoom={zoom}
                   showLaneLines={measureLines}
+                  keyCount={keyCount}
                 />
               )
             )}
@@ -482,14 +582,14 @@ export default function PracticePage(): React.JSX.Element {
           </div>
         )}
 
-        {/* Countdown overlay (3-2-1 → ▶) */}
+        {/* Countdown overlay (3-2-1 → play) */}
         {countdown !== null && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div
-              className="text-slate-900 dark:text-white font-bold select-none"
+              className="text-slate-900 dark:text-white font-bold select-none flex items-center justify-center"
               style={{ fontSize: 120, lineHeight: 1, textShadow: '0 0 60px rgba(100,160,255,0.8), 0 0 20px rgba(100,160,255,0.5)' }}
             >
-              {countdown > 0 ? countdown : '▶'}
+              {countdown > 0 ? countdown : <PlayIcon className="w-[110px] h-[110px]" />}
             </div>
           </div>
         )}
@@ -503,9 +603,11 @@ export default function PracticePage(): React.JSX.Element {
 
       <PianoKeyboard
         activeKeys={activeKeys}
+        hintKeys={hintKeys}
         onKeyDown={isViewMode ? undefined : (midi) => handleNoteInput(midi, 0.8, true)}
         onKeyUp={isViewMode   ? undefined : (midi) => handleNoteInput(midi, 0, false)}
         height={KEYBOARD_HEIGHT}
+        keyCount={keyCount}
       />
     </div>
   )

@@ -2,8 +2,8 @@ import React, { useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import type { MidiNote, NoteVisualState } from '../../types'
 import { useTheme } from '../../context/ThemeContext'
 import {
-  PIANO_MIN, PIANO_MAX, TOTAL_WHITE_KEYS,
-  isBlackKey, getWhiteKeyIndex, getBlackKeyFraction,
+  isBlackKey, getWhiteKeyIndex, getBlackKeyLeftWhite,
+  PIANO_RANGES, type KeyCount, type PianoRange,
 } from '../../utils/noteUtils'
 
 const PX_PER_SECOND = 240
@@ -16,16 +16,16 @@ export interface NoteRenderState {
 }
 
 // ─── Coordinate helpers ───────────────────────────────────────────────────────
-function getNoteRect(midi: number, canvasWidth: number): { x: number; w: number } {
-  const whiteW = canvasWidth / TOTAL_WHITE_KEYS
+function getNoteRect(midi: number, canvasWidth: number, range: PianoRange): { x: number; w: number } {
+  const whiteW = canvasWidth / range.totalWhite
 
   if (!isBlackKey(midi)) {
-    const idx = getWhiteKeyIndex(midi)
+    const idx = getWhiteKeyIndex(midi) - range.whiteOffset
     const gap = Math.max(1, whiteW * 0.04)
     return { x: idx * whiteW + gap, w: whiteW - gap * 2 }
   } else {
     const blackW = whiteW * 0.65
-    const frac   = getBlackKeyFraction(midi)
+    const frac   = (getBlackKeyLeftWhite(midi) - range.whiteOffset + 0.70) / range.totalWhite
     const cx     = frac * canvasWidth
     return { x: cx - blackW / 2, w: blackW }
   }
@@ -57,12 +57,13 @@ interface FallingNotesProps {
   practiceMode?: boolean     // when true: no positional glow — notes only light on 'hit'
   zoom?: number              // 0.5–2.0, default 1.0
   showLaneLines?: boolean    // show vertical key-lane dividers, default true
+  keyCount?: KeyCount        // 88 (default) | 76 | 61 — keep in sync with PianoKeyboard
   onCanvasReady?: (canvas: HTMLCanvasElement) => void
 }
 
 export default function FallingNotes({
   notes, currentTime, keyboardHeight, practiceMode = false,
-  zoom = 1, showLaneLines = true,
+  zoom = 1, showLaneLines = true, keyCount = 88,
   onCanvasReady
 }: FallingNotesProps): React.JSX.Element {
   const { theme }           = useTheme()
@@ -74,6 +75,7 @@ export default function FallingNotes({
   const zoomRef             = useRef(zoom)
   const showLaneLinesRef    = useRef(showLaneLines)
   const themeRef            = useRef(theme)
+  const rangeRef            = useRef(PIANO_RANGES[keyCount])
   const rafRef              = useRef(0)
 
   // useLayoutEffect (not useEffect) so refs sync synchronously after React
@@ -89,6 +91,7 @@ export default function FallingNotes({
   useLayoutEffect(() => { zoomRef.current         = zoom },         [zoom])
   useLayoutEffect(() => { showLaneLinesRef.current = showLaneLines }, [showLaneLines])
   useLayoutEffect(() => { themeRef.current        = theme },        [theme])
+  useLayoutEffect(() => { rangeRef.current        = PIANO_RANGES[keyCount] }, [keyCount])
 
   // Resize observer
   useEffect(() => {
@@ -148,13 +151,14 @@ export default function FallingNotes({
     ctx.fillStyle = bg
     ctx.fillRect(0, 0, W, H)
 
-    const whiteW = W / TOTAL_WHITE_KEYS
+    const range  = rangeRef.current
+    const whiteW = W / range.totalWhite
 
     // ── Vertical key-lane dividers ──────────────────────────────────────────
     if (showLaneLinesRef.current) {
       ctx.strokeStyle = isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)'
       ctx.lineWidth   = 1
-      for (let i = 0; i <= TOTAL_WHITE_KEYS; i++) {
+      for (let i = 0; i <= range.totalWhite; i++) {
         const x = Math.round(i * whiteW) + 0.5
         ctx.beginPath()
         ctx.moveTo(x, 0)
@@ -195,8 +199,9 @@ export default function FallingNotes({
 
       if (noteBotDelta < -0.1)              continue  // fully passed
       if (noteTopDelta > effectiveLookAhead) continue  // too far ahead
+      if (note.midi < range.min || note.midi > range.max) continue  // outside picked range
 
-      const { x, w } = getNoteRect(note.midi, W)
+      const { x, w } = getNoteRect(note.midi, W, range)
 
       // yTop = bottom of the drawn rect = the note's leading edge (hits piano first)
       const yTop  = hitY - noteTopDelta * pps

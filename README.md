@@ -2,7 +2,7 @@
 
 An interactive piano learning app — falling notes, sheet music, MIDI keyboard support, and real-time feedback. Built with Electron + React.
 
-UI is in Vietnamese / English; theme is dark / light (toggle in the home header). The app itself plays any standard MIDI file.
+UI is in Vietnamese / English; theme is dark / light (both live behind a single gear / settings popover in the home header). The app itself plays any standard MIDI file.
 
 ---
 
@@ -43,6 +43,7 @@ UI is in Vietnamese / English; theme is dark / light (toggle in the home header)
 - 300 ms scheduling look-ahead so timing survives normal JS jitter.
 - MIDI keyboard input via Web MIDI API.
 - Computer keyboard fallback: `a w s e d f t g y h u j k o l p ;` → C4 → E5.
+- The practice header's keyboard-help popover locks itself (greyed out + lock badge) while a real piano is connected, so the cheat sheet only surfaces when it's actually useful.
 
 ### Transport / tools
 - Play / pause / restart / rewind 5 s / fast-forward 5 s.
@@ -105,6 +106,9 @@ src/
     ├── context/          AppContext — file list, midiFile, practiceSettings,
     │                     resumePoints (per-song), modePrefs (per-(song, mode)).
     │                     ThemeContext — dark / light, persisted to localStorage.
+    │                     MidiContext — Web MIDI connection, known-device
+    │                     persistence, auto-connect, disconnect notices, and a
+    │                     pub/sub so every page shares one connection.
     │
     ├── i18n/             LanguageContext + flat-dictionary `t(key, params)`.
     │                     Per-language strings live in `locales/<code>.ts`;
@@ -123,8 +127,7 @@ src/
     │                     geometry + naming).
     │
     ├── hooks/            ONLY cross-feature hooks:
-    │   ├── useAudioEngine.ts
-    │   └── useMIDIDevice.ts
+    │   └── useAudioEngine.ts
     │
     ├── pages/            ONLY the three page entry components:
     │   ├── HomePage.tsx        layout — consumes useFileLibrary
@@ -148,17 +151,18 @@ src/
     └── components/       Reusable UI grouped by feature.
         ├── AudioGate.tsx     splash screen that blocks the app until the
         │                     soundfont finishes loading.
-        ├── LanguageToggle.tsx · ThemeToggle.tsx
+        ├── HomeSettings.tsx  gear-button popover combining theme + language.
         ├── ProgressBar.tsx
         ├── sheet/        SheetMusic + helpers (highlighting, noteRefs,
         │                 scrollToCursor, musicXmlBuilder, sheetPreload).
         ├── falling/      FallingNotes (canvas Synthesia view).
         ├── keyboard/     PianoKeyboard.
         ├── header/       PracticeHeader split into ModeDropdown,
-        │                 SettingsPanel, IconBtn, ToggleSwitch, plus shared
-        │                 modeGroups / dropdown enter animation.
+        │                 SettingsPanel, KeyboardHelpPopover, IconBtn,
+        │                 ToggleSwitch, plus shared modeGroups / dropdown
+        │                 enter animation.
         └── library/      HomePage's sub-components + useFileLibrary hook:
-                          FileRow, DevicePanel, KeyboardHint,
+                          FileRow, DevicePanel, MidiDevicePicker,
                           DeleteConfirmModal, icons.
 ```
 

@@ -11,7 +11,7 @@
 import { useCallback, useEffect } from 'react'
 import type { Hand } from '../types'
 import { audioEngine } from '../audio/AudioEngine'
-import { useMIDIDevice } from '../hooks/useMIDIDevice'
+import { useMidi } from '../context/MidiContext'
 import type { NoteState } from './noteState'
 import { TIMING_WINDOW_MS } from './constants'
 
@@ -28,17 +28,22 @@ interface Args {
   setNoteStates: React.Dispatch<React.SetStateAction<Map<string, NoteState>>>
   setIsPlaying:  React.Dispatch<React.SetStateAction<boolean>>
   triggerFlash:  (noteId: string, state: 'hit' | 'missed') => void
+  // Fires on every key-down (correct or wrong). Used to drive the idle-hint
+  // timer at the page level — any press dismisses the hint and resets the clock.
+  onInput?:      () => void
 }
 
 export function usePracticeInput({
   isViewMode, needsMelody,
   isPlayingRef, currentTimeRef, noteStatesRef, holdingRef,
   setActiveKeys, setNoteStates, setIsPlaying, triggerFlash,
+  onInput,
 }: Args): { handleNoteInput: (midi: number, velocity: number, on: boolean) => void } {
   const handleNoteInput = useCallback((midi: number, velocity: number, on: boolean) => {
     if (isViewMode) return   // view-listen blocks all input
 
     if (on) {
+      onInput?.()
       const now = currentTimeRef.current
       let bestMatch: NoteState | null = null
       let bestDelta = Infinity
@@ -114,17 +119,35 @@ export function usePracticeInput({
         }
       })
     }
-  }, [isViewMode, needsMelody, currentTimeRef, noteStatesRef, holdingRef, setActiveKeys, setNoteStates, triggerFlash])
+  }, [isViewMode, needsMelody, currentTimeRef, noteStatesRef, holdingRef, setActiveKeys, setNoteStates, triggerFlash, onInput])
 
   // ─── MIDI device input ────────────────────────────────────────────────────
-  useMIDIDevice(handleNoteInput)
+  // Subscribe to the shared MIDI connection from MidiContext. The connection
+  // itself is owned at App level, so hot-plugging a piano mid-session is
+  // transparent here — auto-connect attaches the new device to the dispatcher
+  // and our subscriber keeps receiving notes without re-mounting.
+  const { subscribe } = useMidi()
+  useEffect(() => subscribe(handleNoteInput), [subscribe, handleNoteInput])
 
-  // ─── Computer keyboard → piano (C4 = A key) ───────────────────────────────
+  // ─── Computer keyboard → piano (C3 = Z, F4 = Q, A5 = P) ──────────────────
+  // Two stacked octaves so the computer-keyboard fallback covers a useful
+  // chunk of the 88-note range when no MIDI piano is available:
+  //   • Lower octave (Z-row whites + A-row blacks)  → C3 D3 E3 … E4
+  //   • Upper octave (Q-row whites + number blacks) → F4 G4 A4 … A5
+  // The two halves are contiguous (E4 → F4), so playing across both rows is
+  // a single uninterrupted run from C3 (MIDI 48) to A5 (MIDI 81).
   useEffect(() => {
     const KEY_MAP: Record<string, number> = {
-      'a': 60, 'w': 61, 's': 62, 'e': 63, 'd': 64, 'f': 65, 't': 66,
-      'g': 67, 'y': 68, 'h': 69, 'u': 70, 'j': 71, 'k': 72, 'o': 73,
-      'l': 74, 'p': 75, ';': 76,
+      // Lower octave
+      'z': 48, 's': 49, 'x': 50, 'd': 51, 'c': 52,
+      'v': 53, 'g': 54, 'b': 55, 'h': 56, 'n': 57,
+      'j': 58, 'm': 59, ',': 60, 'l': 61, '.': 62,
+      ';': 63, '/': 64,
+      // Upper octave
+      'q': 65, '2': 66, 'w': 67, '3': 68, 'e': 69,
+      '4': 70, 'r': 71, 't': 72, '6': 73, 'y': 74,
+      '7': 75, 'u': 76, 'i': 77, '9': 78, 'o': 79,
+      '0': 80, 'p': 81,
     }
     const pressed = new Set<string>()
     const onDown = (e: KeyboardEvent) => {

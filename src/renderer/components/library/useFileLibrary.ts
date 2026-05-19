@@ -8,7 +8,7 @@
 //
 // HomePage becomes a layout-only component that consumes this hook.
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { parseMidiBuffer } from '../../utils/midiUtils'
 import { preloadSheet, hasCachedSheetByName, evictSheetByName } from '../sheet/sheetPreload'
@@ -49,9 +49,17 @@ export interface UseFileLibrary {
 export function useFileLibrary(): UseFileLibrary {
   const navigate = useNavigate()
   const {
-    setMidiFile, updateFileList, setFolderPath, folderPath,
+    setMidiFile, updateFileList, setFolderPath, folderPath, fileList,
     hiddenPaths, addHiddenPath, removeHiddenPath,
   } = useAppContext()
+
+  // Ref-mirrored fileList so async handlers (syncFolder) can read the latest
+  // committed list without depending on closure capture, and without relying
+  // on React invoking setState updaters synchronously — that "eager state
+  // computation" is an optimization that only fires when the queue is empty,
+  // so reading outer-scope writes from inside a setState callback is fragile.
+  const fileListRef = useRef<FileEntry[]>(fileList)
+  useEffect(() => { fileListRef.current = fileList }, [fileList])
   const { t } = useLanguage()
 
   // Loading set rather than a single path — folder picks parse multiple files
@@ -150,85 +158,83 @@ export function useFileLibrary(): UseFileLibrary {
     // reappear after restart or after fs.watch picks up the file again.
     const refs = refs0.filter((r) => !hiddenPaths.has(r.path))
 
-    // Compute the "needs parsing" set inside the state updater so we always
-    // see the latest fileList; the array is captured into the outer scope
-    // for the parse loop that runs after.
-    let needsParsing: Array<{ name: string; path: string }> = []
-    // Folder-source entries that disappeared from disk since the last scan
-    // OR whose path was overridden by a newly-picked folder pointing a
-    // matching display-name at a different file.  Cached sheets for these
-    // names must be evicted so the new file gets a fresh preload.
-    let evictNames: string[] = []
+    // Read the latest fileList via ref so the diff is computed against the
+    // truly current state (not the closure-captured value when syncFolder was
+    // memoised) and without relying on React running setState updaters
+    // synchronously.
+    const prev = fileListRef.current
 
-    updateFileList((prev) => {
-      // Dedup by display name: when the new folder contains a file whose
-      // name already exists in the list, the new folder wins — same single
-      // row, updated to point at the new file.  This keeps the list stable
-      // for the user (no duplicate "123" rows when two folders both have a
-      // 123.mid) while still letting them switch folders freely.
-      const prevByName = new Map<string, FileEntry>()
-      for (const f of prev) prevByName.set(f.name, f)
-      const consumedNames = new Set<string>()
+    // Dedup by display name: when the new folder contains a file whose name
+    // already exists in the list, the new folder wins — same single row,
+    // updated to point at the new file.  Keeps the list stable (no duplicate
+    // "123" rows when two folders both have 123.mid) while still letting the
+    // user switch folders freely.
+    const prevByName = new Map<string, FileEntry>()
+    for (const f of prev) prevByName.set(f.name, f)
+    const consumedNames = new Set<string>()
+    const evictNames:   string[] = []
 
-      const folderEntries: FileEntry[] = refs.map((r) => {
-        const existing = prevByName.get(r.name)
-        if (existing) {
-          consumedNames.add(r.name)
-          // Same file: exact path match OR same folder (a re-pick of the
-          // current folder can yield a slightly different path string in
-          // edge cases — we don't want to wipe the cached duration).
-          if (existing.path === r.path || existing.folderPath === folder) {
-            return { ...existing, path: r.path, source: 'folder', folderPath: folder }
-          }
-          // Different folder, same name: it's a different file; cached
-          // sheet/duration belong to the old file and must be discarded.
-          evictNames.push(r.name)
+    const folderEntries: FileEntry[] = refs.map((r) => {
+      const existing = prevByName.get(r.name)
+      if (existing) {
+        consumedNames.add(r.name)
+        // Same file: exact path match OR same folder (a re-pick of the
+        // current folder may yield a slightly different path string in edge
+        // cases — don't wipe the cached duration).
+        if (existing.path === r.path || existing.folderPath === folder) {
+          return { ...existing, path: r.path, source: 'folder', folderPath: folder }
         }
-        return {
-          name:       r.name,
-          path:       r.path,
-          duration:   undefined,
-          source:     'folder',
-          folderPath: folder,
-        }
-      })
-
-      // Keep prev entries that weren't consumed by name, EXCEPT stale folder
-      // entries belonging to THIS folder (file deleted from disk).  Entries
-      // from other folders / imports are kept — list is additive across
-      // folder picks.
-      const others = prev.filter((f) => {
-        if (consumedNames.has(f.name))                            return false
-        if (f.source === 'folder' && f.folderPath === folder)     return false
-        return true
-      })
-
-      for (const f of prev) {
-        if (f.source === 'folder' &&
-            f.folderPath === folder &&
-            !refs.some((r) => r.path === f.path)) {
-          evictNames.push(f.name)
-        }
+        // Different folder, same name: it's a different file; cached
+        // sheet/duration belong to the old file and must be discarded.
+        evictNames.push(r.name)
       }
-
-      // Re-parse:
-      //  - current-folder entries when duration is missing (fresh entry /
-      //    overridden by a different file) OR when the sheet isn't cached
-      //    (app reopened — duration persists via localStorage but the OSMD
-      //    cache does not).
-      //  - other-folder / import entries when duration is missing.  Without
-      //    this, an entry that lost its duration in a prior sync would stay
-      //    blank forever, since later folder picks only touch the current
-      //    folder's rows.  Sheet cache is left alone for cross-folder rows.
-      const currentFolderParsing = folderEntries
-        .filter((e) => e.duration === undefined || !hasCachedSheetByName(e.name))
-        .map((e) => ({ name: e.name, path: e.path }))
-      const otherParsing = others
-        .filter((f) => f.duration === undefined)
-        .map((f) => ({ name: f.name, path: f.path }))
-      needsParsing = [...currentFolderParsing, ...otherParsing]
-      return [...others, ...folderEntries]
+      return {
+        name:       r.name,
+        path:       r.path,
+        duration:   undefined,
+        source:     'folder',
+        folderPath: folder,
+      }
     })
+
+    // Keep prev entries that weren't consumed by name, EXCEPT stale folder
+    // entries belonging to THIS folder (file deleted from disk).  Entries
+    // from other folders / imports are kept — list is additive across picks.
+    const others = prev.filter((f) => {
+      if (consumedNames.has(f.name))                            return false
+      if (f.source === 'folder' && f.folderPath === folder)     return false
+      return true
+    })
+
+    for (const f of prev) {
+      if (f.source === 'folder' &&
+          f.folderPath === folder &&
+          !refs.some((r) => r.path === f.path)) {
+        evictNames.push(f.name)
+      }
+    }
+
+    // Re-parse:
+    //  - current-folder entries when duration is missing (fresh / overridden)
+    //    OR when the sheet isn't cached (app reopened — duration persists via
+    //    localStorage but the OSMD cache does not).
+    //  - other-folder / import entries when duration is missing.  Without
+    //    this, an entry that lost its duration in a prior sync would stay
+    //    blank forever.
+    const currentFolderParsing = folderEntries
+      .filter((e) => e.duration === undefined || !hasCachedSheetByName(e.name))
+      .map((e) => ({ name: e.name, path: e.path }))
+    const otherParsing = others
+      .filter((f) => f.duration === undefined)
+      .map((f) => ({ name: f.name, path: f.path }))
+    const needsParsing = [...currentFolderParsing, ...otherParsing]
+
+    const nextList = [...others, ...folderEntries]
+    // Keep the ref in sync immediately so any concurrent syncFolder triggered
+    // before the next render commit (rare, but possible via fs.watch) sees
+    // the post-diff list rather than the pre-diff one.
+    fileListRef.current = nextList
+    updateFileList(() => nextList)
 
     for (const name of evictNames) evictSheetByName(name)
 
@@ -243,7 +249,7 @@ export function useFileLibrary(): UseFileLibrary {
         if (!buf) continue
         const data = await parseMidiBuffer(buf, r.name)
         if (data.notes.length === 0) continue
-        updateFileList((prev) => prev.map((f) =>
+        updateFileList((list) => list.map((f) =>
           f.path === r.path ? { ...f, duration: data.duration } : f
         ))
         await preloadSheet(data)

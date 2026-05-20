@@ -10,6 +10,9 @@ import { useFlashTimer }        from '../practice/useFlashTimer'
 import { usePlayhead }          from '../practice/usePlayhead'
 import { useTransport }         from '../practice/useTransport'
 import { useModeChange }        from '../practice/useModeChange'
+import { useScoring }           from '../practice/useScoring'
+import { addScore }             from '../practice/leaderboard'
+import { useChallengeEnabled }  from '../practice/useChallengeEnabled'
 import {
   KEYBOARD_HEIGHT, NOTE_LOOK_AHEAD_S,
   LEAD_IN_TARGET, PRACTICE_TRANSITION_STYLE,
@@ -164,8 +167,89 @@ export default function PracticePage(): React.JSX.Element {
   const [showSheetMusic,   setShowSheetMusic]   = useState(() => initialPrefs?.showSheetMusic   ?? false)
   const [showFallingNotes, setShowFallingNotes] = useState(() => initialPrefs?.showFallingNotes ?? true)
 
+  // ─── Scoring ──────────────────────────────────────────────────────────────
+  // View-listen / demo never counts.  When challenge is on, every full
+  // playthrough AND every loop iteration silently appends a score entry to
+  // the leaderboard — no result modal interrupts the flow.  The user reads
+  // their progress from the leaderboard popover in the header.
+  const [challengeEnabled, setChallengeEnabled] = useChallengeEnabled(midiFile?.name ?? null)
+  const scoringActive = !isViewMode && challengeEnabled
+
+  const scoring = useScoring()
+
+  // Total scoreable notes for the current (song, mode) pair — accuracy basis.
+  const totalNotes = visibleNotes.length
+
+  // Snapshot the just-finished playthrough.  Fires once at song wrap; we
+  // save then reset the live counter so the next cycle starts from zero.
+  // No-op if nothing scoreable happened.
+  const handleSongEnd = useCallback(() => {
+    if (!scoringActive || !midiFile) return
+    const total = totalNotes
+    if (total === 0) { scoring.reset(); return }
+    const s        = scoring.state
+    if (s.success === 0 && s.missed === 0 && s.score === 0) {
+      // Silent skip — playhead reached end with zero interaction (e.g. user
+      // fast-forwarded the whole song without playing).  Nothing to record.
+      return
+    }
+    const accuracy = s.success / total
+    const score    = Math.round(s.score)
+    addScore(midiFile.name, {
+      score, success: s.success, missed: s.missed,
+      combosHits: s.combosHits, maxCombo: s.maxCombo,
+      totalNotes: total, accuracy,
+      mode, date: Date.now(),
+    })
+    setScoreVersion((n) => n + 1)
+    scoring.reset()
+    // Song played all the way through — the bookmark for resume-on-next-open
+    // is no longer meaningful.
+    setResumePoint(midiFile.name, null)
+  }, [scoringActive, midiFile, mode, scoring, totalNotes, setResumePoint])
+
+  // Loop-iteration checkpoint: same shape as handleSongEnd, but bounded to
+  // the active loop region (totalNotes counts only notes inside it).
+  const handleLoopWrap = useCallback(() => {
+    if (!scoringActive || !midiFile) return
+    const region = loopRegionRef.current
+    if (!region) return
+    const startSec = region.start * midiFile.duration
+    const endSec   = region.end   * midiFile.duration
+    const inRange = visibleNotes.filter(
+      (n) => n.time >= startSec - 0.001 && n.time < endSec - 0.001
+    )
+    const total = inRange.length
+    if (total === 0) { scoring.reset(); return }
+    const s        = scoring.state
+    if (s.success === 0 && s.missed === 0 && s.score === 0) return
+    const accuracy = s.success / total
+    const score    = Math.round(s.score)
+    addScore(midiFile.name, {
+      score, success: s.success, missed: s.missed,
+      combosHits: s.combosHits, maxCombo: s.maxCombo,
+      totalNotes: total, accuracy,
+      mode, date: Date.now(),
+      loopRegion: { startSec, endSec },
+    })
+    setScoreVersion((n) => n + 1)
+    scoring.reset()
+  }, [scoringActive, midiFile, mode, scoring, visibleNotes])
+
+  // Turning challenge off mid-session wipes any in-progress score so the
+  // counter doesn't bleed across the toggle.
+  useEffect(() => {
+    if (challengeEnabled) return
+    scoring.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challengeEnabled])
+
   // ─── Hooks: playback engine ───────────────────────────────────────────────
-  const { triggerFlash } = useFlashTimer({ setNoteStates })
+  const { triggerFlash } = useFlashTimer({
+    setNoteStates,
+    onHit:    scoringActive ? scoring.onHit  : undefined,
+    onMissed: scoringActive ? scoring.onMiss : undefined,
+  })
 
   const { scheduleAudio } = useAudioScheduler({
     midiFile, isViewMode,
@@ -180,6 +264,9 @@ export default function PracticePage(): React.JSX.Element {
     visibleNotesRef, noteStatesRef,
     setCurrentTime, setNoteStates, setActiveKeys,
     triggerFlash,
+    onMissed:   scoringActive ? scoring.onMiss : undefined,
+    onSongEnd:  scoringActive ? handleSongEnd  : undefined,
+    onLoopWrap: scoringActive ? handleLoopWrap : undefined,
   })
 
   const transport = useTransport({
@@ -201,6 +288,7 @@ export default function PracticePage(): React.JSX.Element {
     isPlayingRef, currentTimeRef, noteStatesRef, holdingRef,
     setActiveKeys, setNoteStates, setIsPlaying, triggerFlash,
     onInput: handleInputBeat,
+    onWrongPress: scoringActive ? scoring.onWrongAt : undefined,
   })
 
   // Reset the idle clock when the user pauses/resumes or switches mode.  Same
@@ -437,6 +525,25 @@ export default function PracticePage(): React.JSX.Element {
     navigate('/mode')
   }, [transport, navigate, mode, midiFile, setResumePoint])
 
+  // Bumped after each score save (end-of-song or loop wrap) so popovers /
+  // child views know to refetch from the leaderboard store.
+  const [scoreVersion, setScoreVersion] = useState(0)
+
+  // Header restart counts as a "new attempt" — wipe the live counter so
+  // the rerun starts from zero.  The save already happened on the prior
+  // song wrap, so there's nothing to commit here.
+  const handleHeaderRestart = useCallback(() => {
+    if (scoringActive) scoring.reset()
+    transport.handleRestart()
+  }, [scoringActive, scoring, transport])
+
+  // Mode switch rebuilds note states and changes which notes count toward the
+  // score — reset the live counter so the new mode starts from 0.
+  useEffect(() => {
+    scoring.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
+
   // Cleanup on unmount — flash timers cleaned by useFlashTimer itself.
   useEffect(() => () => { audioEngine.stopMetronome() }, [])
 
@@ -491,9 +598,11 @@ export default function PracticePage(): React.JSX.Element {
         measureLines={measureLines}
         keyCount={keyCount}
         keyCountLocked={keyCountLocked}
+        challengeEnabled={isViewMode ? undefined : challengeEnabled}
+        scoreVersion={scoreVersion}
         onBack={handleBack}
         onPlayPause={transport.handlePlayPause}
-        onRestart={transport.handleRestart}
+        onRestart={handleHeaderRestart}
         onRewind={transport.handleRewind}
         onFastForward={transport.handleFastForward}
         onBpmChange={handleBpmChange}
@@ -508,6 +617,7 @@ export default function PracticePage(): React.JSX.Element {
         onMeasureLinesToggle={handleMeasureLinesToggle}
         onModeChange={handleModeChange}
         onKeyCountChange={handleKeyCountChange}
+        onChallengeToggle={isViewMode ? undefined : () => setChallengeEnabled(!challengeEnabled)}
       />
 
       <ProgressBar
@@ -609,6 +719,7 @@ export default function PracticePage(): React.JSX.Element {
         height={KEYBOARD_HEIGHT}
         keyCount={keyCount}
       />
+
     </div>
   )
 }

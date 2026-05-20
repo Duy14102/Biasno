@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -9,6 +9,9 @@ import {
   RightHandIcon, LeftHandIcon, BothHandsIcon,
   EyeIcon, MusicNoteIcon, MetronomeIcon, TargetIcon,
 } from '../components/header/icons'
+import LeaderboardModal from '../components/library/LeaderboardModal'
+import { getBestScore } from '../practice/leaderboard'
+import { useChallengeEnabled } from '../practice/useChallengeEnabled'
 
 type IconCmp = React.FC<{ className?: string }>
 
@@ -116,6 +119,15 @@ export default function ModePage(): React.JSX.Element {
   // Resume bookmark is scoped per-song so each MIDI keeps its own mark.
   const resumePoint = resumePoints[midiFile.name] ?? null
 
+  const [showLeaderboard, setShowLeaderboard] = useState(false)
+  // Recompute when the modal closes so a fresh result reflects immediately.
+  const bestScore = useMemo(
+    () => getBestScore(midiFile.name),
+    [midiFile.name, showLeaderboard]
+  )
+
+  const [challengeEnabled, setChallengeEnabled] = useChallengeEnabled(midiFile.name)
+
   const startFresh = (mode: PracticeMode) => {
     setResumePoint(midiFile.name, null)
     setPracticeSettings({ mode, midiFile })
@@ -150,7 +162,67 @@ export default function ModePage(): React.JSX.Element {
         <span className="text-slate-500 dark:text-slate-400 text-sm font-mono tabular-nums shrink-0">
           {Math.round(midiFile.bpm)} BPM
         </span>
+        {/* Challenge toggle — a labelled iOS-style switch.  Earlier this was
+            a small pill with a coloured dot, which read like a status badge,
+            not an action.  Pairing the label with a visible track + sliding
+            thumb makes the clickability obvious at a glance. */}
+        <button
+          onClick={() => setChallengeEnabled(!challengeEnabled)}
+          role="switch"
+          aria-checked={challengeEnabled}
+          title={challengeEnabled ? t('challengeOn') : t('challengeOff')}
+          className={[
+            'group flex items-center gap-2.5 pl-3 pr-1.5 py-1 rounded-full text-sm font-semibold shrink-0 border transition-[background-color,border-color,box-shadow,transform] duration-150 active:scale-95',
+            challengeEnabled
+              ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800 shadow-sm shadow-emerald-500/10 dark:bg-emerald-500/15 dark:hover:bg-emerald-500/25 dark:border-emerald-400/30 dark:text-emerald-200'
+              : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-600 dark:text-slate-300',
+          ].join(' ')}
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          <span className="text-base leading-none" aria-hidden>🏆</span>
+          <span className="hidden sm:inline">{t('challenge')}</span>
+          <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-wider opacity-70">
+            {challengeEnabled ? t('on') : t('off')}
+          </span>
+          {/* Switch track */}
+          <span
+            aria-hidden
+            className={[
+              'relative inline-flex items-center w-9 h-5 rounded-full transition-colors',
+              challengeEnabled
+                ? 'bg-emerald-500'
+                : 'bg-slate-300 group-hover:bg-slate-400 dark:bg-slate-600 dark:group-hover:bg-slate-500',
+            ].join(' ')}
+            style={{ padding: '2px' }}
+          >
+            <span
+              className="w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
+              style={{ transform: challengeEnabled ? 'translateX(16px)' : 'translateX(0px)' }}
+            />
+          </span>
+        </button>
+        <button
+          onClick={() => setShowLeaderboard(true)}
+          className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 dark:text-amber-200 transition-colors text-sm font-semibold shrink-0"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          title={t('leaderboardTitle')}
+        >
+          <span aria-hidden>🏆</span>
+          <span className="hidden sm:inline">{t('leaderboard')}</span>
+          {bestScore && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/70 dark:bg-slate-900/40 text-[11px] font-mono tabular-nums">
+              {Math.round(bestScore.score)}
+            </span>
+          )}
+        </button>
       </header>
+
+      {showLeaderboard && (
+        <LeaderboardModal
+          songName={midiFile.name}
+          onClose={() => setShowLeaderboard(false)}
+        />
+      )}
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-6 py-6">

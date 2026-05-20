@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { useMidi }        from '../context/MidiContext'
 import { useFileLibrary } from '../components/library/useFileLibrary'
@@ -9,6 +10,8 @@ import DeleteConfirmModal from '../components/library/DeleteConfirmModal'
 import FolderConflictModal from '../components/library/FolderConflictModal'
 import HomeSettings       from '../components/HomeSettings'
 import { useLanguage }    from '../i18n/LanguageContext'
+import { PianoIcon, MusicNoteIcon } from '../components/header/icons'
+import { FolderIcon }     from '../components/library/icons'
 
 // ─── Page-scoped keyframes ───────────────────────────────────────────────────
 // Injected once at the top of the document.  `mbar` drives the hover music
@@ -28,6 +31,7 @@ const BAR_STYLE = `
 export default function HomePage(): React.JSX.Element {
   const { fileList, folderPath } = useAppContext()
   const { t }                    = useLanguage()
+  const navigate                 = useNavigate()
 
   // Subscribe an audio-preview handler on the home page so pressing a key on
   // a connected MIDI keyboard plays the piano sample. The subscription is
@@ -67,8 +71,8 @@ export default function HomePage(): React.JSX.Element {
           extend below the header without the body intercepting clicks. */}
       <header className="relative flex items-center gap-3 px-5 py-3 bg-white dark:bg-slate-900 dark:bg-gradient-to-b dark:from-slate-800/95 dark:to-slate-900/95 backdrop-blur-sm border-b border-slate-300 dark:border-slate-700/70 shadow-sm z-20">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 via-violet-500 to-fuchsia-500 flex items-center justify-center text-base shadow-lg shadow-blue-500/30 ring-1 ring-white/10">
-            🎹
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 via-violet-500 to-fuchsia-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/10">
+            <PianoIcon className="w-5 h-5" />
           </div>
           <div className="flex flex-col leading-tight">
             <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">Biasno</h1>
@@ -92,6 +96,15 @@ export default function HomePage(): React.JSX.Element {
           <div className="w-full max-w-md flex flex-col gap-5">
 
             <MidiDevicePicker />
+
+            <button
+              onClick={() => navigate('/free')}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600 hover:from-violet-500 hover:via-fuchsia-500 hover:to-pink-500 text-white text-sm font-semibold shadow-lg shadow-fuchsia-500/25 transition-colors"
+              title={t('freeModeOpenHint')}
+            >
+              <PianoIcon className="w-4 h-4" />
+              <span>{t('freeModeOpen')}</span>
+            </button>
 
             {midiError && <p className="text-xs text-red-600 dark:text-red-400 text-center">{midiError}</p>}
 
@@ -138,7 +151,7 @@ export default function HomePage(): React.JSX.Element {
             </div>
             {folderPath && (
               <div className="mt-2.5 flex items-center gap-1.5 text-xs text-slate-500" title={folderPath}>
-                <span className="text-amber-500 dark:text-amber-400/80 shrink-0">📁</span>
+                <FolderIcon className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400/80 shrink-0" />
                 <span className="truncate">{folderPath}</span>
               </div>
             )}
@@ -148,8 +161,8 @@ export default function HomePage(): React.JSX.Element {
           <div className="flex-1 overflow-y-auto">
             {fileList.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 dark:bg-slate-800/60 dark:border-slate-700/60 flex items-center justify-center text-3xl mb-1">
-                  🎵
+                <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 dark:bg-slate-800/60 dark:border-slate-700/60 flex items-center justify-center text-slate-500 dark:text-slate-400 mb-1">
+                  <MusicNoteIcon className="w-7 h-7" />
                 </div>
                 <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">{t('noSongsYet')}</p>
                 <p className="text-xs text-slate-500 leading-relaxed max-w-[18rem]">
@@ -185,7 +198,7 @@ export default function HomePage(): React.JSX.Element {
               lib.isDragging ? 'opacity-100' : 'opacity-0',
             ].join(' ')}
           >
-            <span className="text-4xl">🎵</span>
+            <MusicNoteIcon className="w-10 h-10 text-blue-600 dark:text-blue-300" />
             <p className="text-blue-700 dark:text-blue-200 text-sm font-medium">{t('dropMidiHere')}</p>
             <p className="text-blue-600/80 dark:text-blue-300/70 text-xs">{t('midOrMidi')}</p>
           </div>

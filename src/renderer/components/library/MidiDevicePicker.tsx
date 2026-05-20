@@ -7,6 +7,8 @@ import React from 'react'
 import { useMidi, type MidiDeviceView } from '../../context/MidiContext'
 import { useLanguage } from '../../i18n/LanguageContext'
 import DevicePanel from './DevicePanel'
+import { PianoIcon } from '../header/icons'
+import { CloseIcon } from './icons'
 
 export default function MidiDevicePicker(): React.JSX.Element {
   const { supported, devices, connectedId, connecting, connectError, connect, forgetDevice } = useMidi()
@@ -65,8 +67,8 @@ function ActiveDeviceCard({ device, onClick }: { device: MidiDeviceView; onClick
       className="group relative w-full flex items-center gap-3.5 p-4 pl-5 rounded-2xl border text-left overflow-hidden bg-gradient-to-br from-blue-50 via-white to-violet-50 border-blue-400 shadow-lg shadow-blue-500/15 transition-all duration-200 hover:shadow-xl hover:shadow-blue-500/20 dark:from-blue-600/15 dark:via-slate-800/40 dark:to-violet-600/10 dark:border-blue-500/50"
     >
       <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-blue-400 to-violet-500" />
-      <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 bg-gradient-to-br from-blue-500 to-violet-600 text-white shadow-md shadow-blue-500/40 ring-2 ring-white/30 dark:ring-white/10">
-        🎹
+      <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-blue-500 to-violet-600 text-white shadow-md shadow-blue-500/40 ring-2 ring-white/30 dark:ring-white/10">
+        <PianoIcon className="w-6 h-6" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-semibold truncate text-sm text-blue-900 dark:text-white">{device.name}</p>
@@ -108,12 +110,12 @@ function InactiveDeviceRow({ device, connecting, errorMessage, onClick, onForget
           ].join(' ')}
         >
           <div className={[
-            'w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0 transition-colors',
+            'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors',
             offline
               ? 'bg-slate-100/70 text-slate-400 dark:bg-slate-700/30 dark:text-slate-500'
               : 'bg-slate-100 text-slate-500 dark:bg-slate-700/50 dark:text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 dark:group-hover:bg-blue-500/10 dark:group-hover:text-blue-300',
           ].join(' ')}>
-            🎹
+            <PianoIcon className="w-4 h-4" />
           </div>
           <div className="flex-1 min-w-0">
             <p className={[
@@ -146,11 +148,11 @@ function InactiveDeviceRow({ device, connecting, errorMessage, onClick, onForget
         {onForget && !connecting && (
           <button
             onClick={onForget}
-            className="flex items-center justify-center px-2.5 rounded-r-lg border border-l-0 bg-slate-50 border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200 dark:bg-slate-800/20 dark:border-slate-700/30 dark:text-slate-500 dark:hover:bg-red-500/10 dark:hover:text-red-300 dark:hover:border-red-500/30 transition-colors text-sm"
+            className="flex items-center justify-center px-2.5 rounded-r-lg border border-l-0 bg-slate-50 border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200 dark:bg-slate-800/20 dark:border-slate-700/30 dark:text-slate-500 dark:hover:bg-red-500/10 dark:hover:text-red-300 dark:hover:border-red-500/30 transition-colors"
             title={t('forgetDevice')}
             aria-label={t('forgetDevice')}
           >
-            ✕
+            <CloseIcon className="w-3.5 h-3.5" />
           </button>
         )}
       </div>

@@ -132,12 +132,17 @@ export class AudioEngine {
   }
 
   // ─── Scheduled playback (song playback) ──────────────────────────────────
-  noteAtTime(midi: number, startTime: number, duration: number, velocity = 0.8): void {
+  // `tailSec` is the extra audible time appended past `duration` for a
+  // natural piano release.  Defaults to 1.5 s (PracticePage demo playback)
+  // because piano samples sound abrupt without it.  Free-Mode playback
+  // wants exact note cuts — pass a small tail (≈ 0.05 s) so seeking past
+  // a sustained note doesn't bleed its tail into the supposed-silent gap.
+  noteAtTime(midi: number, startTime: number, duration: number, velocity = 0.8, tailSec = 1.5): void {
     if (!this.isReady) return
     const vel = Math.min(1, Math.max(0.01, velocity))
     try {
       if (this.player) {
-        const node = this.player.play(midiToNote(midi), startTime, { gain: vel * 5, duration: duration + 1.5 })
+        const node = this.player.play(midiToNote(midi), startTime, { gain: vel * 5, duration: duration + tailSec })
         if (node) {
           const bufNode = node as unknown as AudioBufferSourceNode
           // Cache buffer for mid-note resume (offset playback)

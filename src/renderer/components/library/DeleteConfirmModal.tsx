@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import type { FileEntry } from '../../context/AppContext'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { FolderIcon, ImportIcon } from './icons'
 
 interface Props {
   entry:     FileEntry
@@ -40,10 +41,10 @@ export default function DeleteConfirmModal({ entry, onCancel, onConfirm }: Props
         {/* Header — icon + title differ by source. */}
         <div className="flex items-start gap-3 px-5 pt-5">
           <div className={[
-            'w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0',
+            'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0',
             isFolder ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
           ].join(' ')}>
-            {isFolder ? '🗂' : '📥'}
+            {isFolder ? <FolderIcon className="w-5 h-5" /> : <ImportIcon className="w-5 h-5" />}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-slate-900 dark:text-white font-semibold text-base leading-snug">

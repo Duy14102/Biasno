@@ -8,6 +8,7 @@ import MidiDisconnectToast from './components/MidiDisconnectToast'
 import HomePage from './pages/HomePage'
 import ModePage from './pages/ModePage'
 import PracticePage from './pages/PracticePage'
+import FreeModePage from './pages/FreeModePage'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
                   <Route path="/" element={<HomePage />} />
                   <Route path="/mode" element={<ModePage />} />
                   <Route path="/practice" element={<PracticePage />} />
+                  <Route path="/free" element={<FreeModePage />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </HashRouter>

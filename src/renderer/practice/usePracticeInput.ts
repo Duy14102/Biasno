@@ -31,13 +31,19 @@ interface Args {
   // Fires on every key-down (correct or wrong). Used to drive the idle-hint
   // timer at the page level — any press dismisses the hint and resets the clock.
   onInput?:      () => void
+  // Scoring hook. onWrongPress fires on a non-matching key; the closest
+  // active note (if any) is passed so the page can scale the penalty by
+  // how deep into that note the player struck.  Correct hits are awarded
+  // from the confirmed-hit path (useFlashTimer 'hit'), not on press, so a
+  // press-then-early-release doesn't earn points.
+  onWrongPress?: (now: number, activeNote: import('../types').MidiNote | null) => void
 }
 
 export function usePracticeInput({
   isViewMode, needsMelody,
   isPlayingRef, currentTimeRef, noteStatesRef, holdingRef,
   setActiveKeys, setNoteStates, setIsPlaying, triggerFlash,
-  onInput,
+  onInput, onWrongPress,
 }: Args): { handleNoteInput: (midi: number, velocity: number, on: boolean) => void } {
   const handleNoteInput = useCallback((midi: number, velocity: number, on: boolean) => {
     if (isViewMode) return   // view-listen blocks all input
@@ -90,6 +96,17 @@ export function usePracticeInput({
           next.set(midi, { hand: 'unknown', hitState: 'wrong', time: pressTime })
           return next
         })
+        // Find the nearest active/holding note (regardless of pitch) to scale
+        // the penalty.  No active note in flight → onWrongPress gets null and
+        // the scoring layer treats it as a 0-cost stray press.
+        let nearest: NoteState | null = null
+        let bestD = Infinity
+        noteStatesRef.current.forEach((ns) => {
+          if (ns.visual !== 'active' && ns.visual !== 'holding') return
+          const d = Math.abs(ns.note.time - now)
+          if (d < bestD) { bestD = d; nearest = ns }
+        })
+        onWrongPress?.(now, nearest ? (nearest as NoteState).note : null)
       }
     } else {
       audioEngine.noteOff(midi)
@@ -119,7 +136,7 @@ export function usePracticeInput({
         }
       })
     }
-  }, [isViewMode, needsMelody, currentTimeRef, noteStatesRef, holdingRef, setActiveKeys, setNoteStates, triggerFlash, onInput])
+  }, [isViewMode, needsMelody, currentTimeRef, noteStatesRef, holdingRef, setActiveKeys, setNoteStates, triggerFlash, onInput, onWrongPress])
 
   // ─── MIDI device input ────────────────────────────────────────────────────
   // Subscribe to the shared MIDI connection from MidiContext. The connection

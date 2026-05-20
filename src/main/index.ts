@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import { join } from 'path'
-import { readFileSync, existsSync, mkdirSync, readdirSync, watch, type FSWatcher } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, watch, type FSWatcher } from 'fs'
 
 const isDev = !app.isPackaged
 
@@ -132,6 +132,66 @@ ipcMain.handle('fs:readMidi', async (_event, filePath: string) => {
     return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
   } catch {
     return null
+  }
+})
+
+// ─── IPC: Free Mode — save MIDI buffer to a user-chosen path ─────────────────
+type ExportKind = 'mid' | 'musicxml'
+
+function filterFor(kind: ExportKind): Electron.FileFilter[] {
+  if (kind === 'mid')      return [{ name: 'MIDI Files',     extensions: ['mid'] }]
+  /* musicxml */           return [{ name: 'MusicXML Files', extensions: ['musicxml', 'xml'] }]
+}
+
+ipcMain.handle('dialog:saveBuffer', async (_e, defaultName: string, kind: ExportKind, buffer: ArrayBuffer) => {
+  const result = await dialog.showSaveDialog({ defaultPath: defaultName, filters: filterFor(kind) })
+  if (result.canceled || !result.filePath) return false
+  writeFileSync(result.filePath, Buffer.from(buffer))
+  return true
+})
+
+ipcMain.handle('dialog:saveText', async (_e, defaultName: string, kind: ExportKind, text: string) => {
+  const result = await dialog.showSaveDialog({ defaultPath: defaultName, filters: filterFor(kind) })
+  if (result.canceled || !result.filePath) return false
+  writeFileSync(result.filePath, text, 'utf-8')
+  return true
+})
+
+// Render an HTML document (containing the OSMD-rendered SVG) to PDF via a
+// hidden BrowserWindow + webContents.printToPDF.  The hidden window is
+// destroyed before this handler returns; nothing leaks if the user cancels
+// the save dialog mid-way.
+ipcMain.handle('dialog:savePdfFromHtml', async (_e, defaultName: string, html: string) => {
+  const result = await dialog.showSaveDialog({
+    defaultPath: defaultName,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (result.canceled || !result.filePath) return false
+
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+  })
+  try {
+    await win.loadURL('data:text/html;base64,' + Buffer.from(html, 'utf-8').toString('base64'))
+    // Wait for webfonts to finish loading before rasterising — otherwise the
+    // PDF captures the fallback Times instead of EB Garamond.  500 ms cap so
+    // we don't hang forever if Google Fonts is unreachable.
+    try {
+      await win.webContents.executeJavaScript(
+        'Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]).then(() => true)',
+        true,
+      )
+    } catch { /* ignore — proceed with whatever fonts loaded */ }
+    const pdf = await win.webContents.printToPDF({
+      pageSize: 'A4',
+      printBackground: true,
+      margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
+    })
+    writeFileSync(result.filePath, pdf)
+    return true
+  } finally {
+    win.destroy()
   }
 })
 

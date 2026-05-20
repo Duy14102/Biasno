@@ -10,9 +10,13 @@ import type { NoteState } from './noteState'
 
 interface Args {
   setNoteStates: React.Dispatch<React.SetStateAction<Map<string, NoteState>>>
+  // Scoring hooks — fired once per call.  Kept here (rather than at each
+  // call site) so confirmed-hit / confirmed-miss is a single funnel.
+  onHit?:        (noteId: string) => void
+  onMissed?:     (noteId: string) => void
 }
 
-export function useFlashTimer({ setNoteStates }: Args): {
+export function useFlashTimer({ setNoteStates, onHit, onMissed }: Args): {
   triggerFlash: (noteId: string, state: 'hit' | 'missed') => void
 } {
   const timers = useRef<Map<string, number>>(new Map())
@@ -20,6 +24,9 @@ export function useFlashTimer({ setNoteStates }: Args): {
   const triggerFlash = useCallback((noteId: string, state: 'hit' | 'missed') => {
     const existing = timers.current.get(noteId)
     if (existing) clearInterval(existing)
+
+    if (state === 'hit')    onHit?.(noteId)
+    if (state === 'missed') onMissed?.(noteId)
 
     setNoteStates((prev) => {
       const next = new Map(prev)
@@ -46,7 +53,7 @@ export function useFlashTimer({ setNoteStates }: Args): {
       })
     }, 28)
     timers.current.set(noteId, id)
-  }, [setNoteStates])
+  }, [setNoteStates, onHit, onMissed])
 
   // Cleanup on unmount: kill every running interval.
   useEffect(() => () => { timers.current.forEach((id) => clearInterval(id)) }, [])

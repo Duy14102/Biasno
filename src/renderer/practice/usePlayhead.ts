@@ -46,6 +46,17 @@ interface Args {
   >>
 
   triggerFlash:    (noteId: string, state: 'hit' | 'missed') => void
+
+  // Scoring hooks. onMissed fires once when a note transitions to 'missed'
+  // (active → missed after 0.5 s past its end without confirmation).
+  // onSongEnd fires once at end-of-song in practice mode without active loop;
+  // the engine then expects the page to pause playback and surface results.
+  // onLoopWrap fires every time the loop region wraps back to start — the
+  // page uses it to checkpoint the score for that iteration and reset the
+  // live counter for the next pass.  Playback continues uninterrupted.
+  onMissed?:       (noteId: string) => void
+  onSongEnd?:      () => void
+  onLoopWrap?:     () => void
 }
 
 export function usePlayhead({
@@ -54,7 +65,7 @@ export function usePlayhead({
   loopEnabledRef, loopRegionRef, viewActiveRef, pressedMidi, holdingRef,
   visibleNotesRef, noteStatesRef,
   setCurrentTime, setNoteStates, setActiveKeys,
-  triggerFlash,
+  triggerFlash, onMissed, onSongEnd, onLoopWrap,
 }: Args): void {
   const rafId = useRef(0)
 
@@ -79,6 +90,10 @@ export function usePlayhead({
         const loopEnd   = loopRegionRef.current.end   * midiFile.duration
         const loopStart = loopRegionRef.current.start * midiFile.duration
         if (currentTimeRef.current >= loopEnd) {
+          // Fire BEFORE the rest of the wrap so the page can snapshot the
+          // score that belongs to the iteration we just finished.  The
+          // counter then resets and the next pass starts at 0.
+          onLoopWrap?.()
           currentTimeRef.current = loopStart
           holdingRef.current.clear()
           setNoteStates((prev) => {
@@ -99,8 +114,14 @@ export function usePlayhead({
         }
       }
 
-      // End of song reached → wrap to -leadIn (or 0 for songs with native intro).
+      // End of song reached.  Fire onSongEnd (if wired) BEFORE the wrap so
+      // the page can snapshot the playthrough's score — then continue with
+      // the seamless wrap to -leadIn.  We never pause here anymore: the user
+      // keeps playing, and the score quietly lands in the leaderboard like
+      // each loop iteration does.
       if (currentTimeRef.current >= midiFile.duration + LOOP_RESET_AFTER) {
+        const looping = loopEnabledRef.current && loopRegionRef.current !== null
+        if (onSongEnd && !isViewMode && !looping) onSongEnd()
         const newTime = -leadIn
         currentTimeRef.current = newTime
         lastRAFTime.current = 0
@@ -158,6 +179,7 @@ export function usePlayhead({
           } else if (!isViewMode && ns.visual === 'active' && now > ns.note.time + ns.note.duration + 0.5) {
             // Note end passed by 0.5 s without confirmation — mark as missed.
             next.set(id, { ...ns, visual: 'missed' }); changed = true
+            onMissed?.(id)
           }
         })
         return changed ? next : prev
@@ -199,6 +221,7 @@ export function usePlayhead({
     loopEnabledRef, loopRegionRef, viewActiveRef, pressedMidi, holdingRef,
     visibleNotesRef, noteStatesRef,
     setCurrentTime, setNoteStates, setActiveKeys,
+    onMissed, onSongEnd, onLoopWrap,
   ])
 
   useEffect(() => {

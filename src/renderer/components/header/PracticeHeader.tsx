@@ -5,6 +5,7 @@ import IconBtn             from './IconBtn'
 import ModeDropdown        from './ModeDropdown'
 import SettingsPanel       from './SettingsPanel'
 import KeyboardHelpPopover from './KeyboardHelpPopover'
+import LeaderboardPopover  from './LeaderboardPopover'
 import { useLanguage }     from '../../i18n/LanguageContext'
 import {
   BackIcon, RewindIcon, FastFwdIcon, PlayIcon, PauseIcon, RestartIcon,
@@ -28,6 +29,8 @@ interface PracticeHeaderProps {
   measureLines:     boolean
   keyCount:         KeyCount
   keyCountLocked:   boolean
+  challengeEnabled?: boolean
+  scoreVersion?:    number
   onBack:               () => void
   onPlayPause:          () => void
   onRestart:            () => void
@@ -45,17 +48,18 @@ interface PracticeHeaderProps {
   onMeasureLinesToggle: () => void
   onModeChange:         (mode: PracticeMode) => void
   onKeyCountChange:     () => void
+  onChallengeToggle?:   () => void
 }
 
 export default function PracticeHeader({
   songName, isPlaying, bpmMultiplier, originalBpm,
   metronomeOn, loopOn, countdownEnabled, showSheetMusic, showFallingNotes, mode,
-  volume, zoom, measureLines, keyCount, keyCountLocked,
+  volume, zoom, measureLines, keyCount, keyCountLocked, challengeEnabled, scoreVersion,
   onBack, onPlayPause, onRestart, onRewind, onFastForward,
   onBpmChange, onMetronomeToggle, onLoopToggle, onCountdownToggle,
   onSheetMusicToggle, onFallingNotesToggle,
   onVolumeChange, onVolumeMute, onZoomChange, onMeasureLinesToggle, onModeChange,
-  onKeyCountChange,
+  onKeyCountChange, onChallengeToggle,
 }: PracticeHeaderProps): React.JSX.Element {
   const { t } = useLanguage()
   const currentBpm  = Math.round(originalBpm * bpmMultiplier)
@@ -168,6 +172,18 @@ export default function PracticeHeader({
       <div className="w-px h-7 bg-slate-300 dark:bg-slate-700/60" />
 
       <KeyboardHelpPopover />
+
+      {/* Challenge / leaderboard popover — only available in real practice
+          modes (view-listen never scores, so the trophy would be dead). */}
+      {onChallengeToggle && challengeEnabled !== undefined && (
+        <LeaderboardPopover
+          songName={songName}
+          mode={mode}
+          challengeEnabled={challengeEnabled}
+          onChallengeToggle={onChallengeToggle}
+          scoreVersion={scoreVersion}
+        />
+      )}
 
       <SettingsPanel
         volume={volume} zoom={zoom} measureLines={measureLines} countdownEnabled={countdownEnabled}

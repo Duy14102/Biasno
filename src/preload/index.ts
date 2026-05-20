@@ -39,6 +39,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('fs:folderChanged', handler)
     return () => { ipcRenderer.removeListener('fs:folderChanged', handler) }
   },
+
+  // Free Mode export — three save-to-disk paths (binary, text, HTML→PDF).
+  // Each returns false if the user cancels the save dialog.
+  saveBuffer: (defaultName: string, kind: 'mid' | 'musicxml', buf: ArrayBuffer): Promise<boolean> =>
+    ipcRenderer.invoke('dialog:saveBuffer', defaultName, kind, buf),
+  saveText:   (defaultName: string, kind: 'mid' | 'musicxml', text: string): Promise<boolean> =>
+    ipcRenderer.invoke('dialog:saveText',   defaultName, kind, text),
+  savePdfFromHtml: (defaultName: string, html: string): Promise<boolean> =>
+    ipcRenderer.invoke('dialog:savePdfFromHtml', defaultName, html),
 })
 
 declare global {
@@ -53,6 +62,9 @@ declare global {
       watchFolder: (folderPath: string) => Promise<void>
       unwatchFolder: () => Promise<void>
       onFolderChanged: (cb: (folderPath: string) => void) => (() => void)
+      saveBuffer: (defaultName: string, kind: 'mid' | 'musicxml', buf: ArrayBuffer) => Promise<boolean>
+      saveText:   (defaultName: string, kind: 'mid' | 'musicxml', text: string) => Promise<boolean>
+      savePdfFromHtml: (defaultName: string, html: string) => Promise<boolean>
     }
   }
 }

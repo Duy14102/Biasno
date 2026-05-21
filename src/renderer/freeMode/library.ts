@@ -1,6 +1,6 @@
 import type { RecordedNote } from './types'
-import { LS } from '../constants/storageKeys'
-import { loadJSON, saveJSON } from '../utils/storage'
+import { LS } from '@/constants'
+import { loadJSON, saveJSON } from '@/utils'
 
 const MAX_ENTRIES = 50
 

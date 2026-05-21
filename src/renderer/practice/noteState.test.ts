@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { findBestResumeTime } from './noteState'
-import type { MidiNote } from '../types'
+import type { MidiNote } from '@/types'
 
 const at = (id: string, time: number): MidiNote => ({
   id, midi: 60, time, duration: 0.5, velocity: 0.8, name: 'C4',

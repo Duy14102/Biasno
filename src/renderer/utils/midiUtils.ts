@@ -1,5 +1,5 @@
 import { Midi } from '@tonejs/midi'
-import type { MidiFileData, MidiNote, Hand } from '../types'
+import type { MidiFileData, MidiNote, Hand } from '@/types'
 import { PIANO_MIN, PIANO_MAX, midiToNoteName } from './noteUtils'
 
 export async function parseMidiBuffer(buffer: ArrayBuffer, fileName: string): Promise<MidiFileData> {

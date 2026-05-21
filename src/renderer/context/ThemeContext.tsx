@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { LS } from '../constants/storageKeys'
+import { LS } from '@/constants'
 
 export type Theme = 'dark' | 'light'
 

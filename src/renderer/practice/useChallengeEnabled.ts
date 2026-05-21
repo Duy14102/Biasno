@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { LS } from '../constants/storageKeys'
-import { loadJSON, saveJSON, isPlainObject } from '../utils/storage'
+import { LS } from '@/constants'
+import { loadJSON, saveJSON, isPlainObject } from '@/utils'
 
 type ChallengeMap = Record<string, boolean>
 

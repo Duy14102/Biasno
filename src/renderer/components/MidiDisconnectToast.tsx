@@ -4,8 +4,8 @@
 // dismiss earlier via the close button.
 
 import React, { useEffect } from 'react'
-import { useMidi } from '../context/MidiContext'
-import { useLanguage } from '../i18n/LanguageContext'
+import { useMidi } from '@/context'
+import { useLanguage } from '@/i18n'
 
 const AUTO_DISMISS_MS = 7000
 

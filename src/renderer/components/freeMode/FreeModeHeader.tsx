@@ -1,8 +1,8 @@
 import React from 'react'
-import IconBtn from '../header/IconBtn'
-import { BackIcon } from '../header/icons'
+import { IconBtn } from '@/components/header'
+import { BackIcon } from '@/components/header'
 import { LibraryIcon } from './icons'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useLanguage } from '@/i18n'
 
 interface Props {
   onBack:        () => void

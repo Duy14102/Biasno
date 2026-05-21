@@ -14,7 +14,7 @@
 // Score is clamped at 0 — wrong presses can't drive it below zero.
 
 import { useCallback, useRef, useState } from 'react'
-import type { MidiNote } from '../types'
+import type { MidiNote } from '@/types'
 
 const COMBO_THRESHOLD = 5    // 5 consecutive hits, the next hit is combo bonus
 const COMBO_BONUS     = 2    // points per combo-bonus hit

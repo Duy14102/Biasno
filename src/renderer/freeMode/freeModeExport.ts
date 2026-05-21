@@ -8,8 +8,8 @@
 import { Midi } from '@tonejs/midi'
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 import type { FreeSnapshot, RecordedNote } from './types'
-import { midiToMusicXml } from '../components/sheet/musicXmlBuilder'
-import type { MidiNote, Hand } from '../types'
+import { midiToMusicXml } from '@/components/sheet'
+import type { MidiNote, Hand } from '@/types'
 
 const DEFAULT_BPM = 120
 

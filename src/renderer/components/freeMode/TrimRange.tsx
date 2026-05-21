@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RecordedNote } from '../../freeMode/types'
+import type { RecordedNote } from '@/freeMode'
 
 // Waveform-based trim slider — SoundCloud-style bar visualization with
 // Clipchamp-style "window-closing" trim handles.  Bins are derived from the

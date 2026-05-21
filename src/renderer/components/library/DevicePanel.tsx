@@ -1,6 +1,6 @@
 import React from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
-import { PianoIcon } from '../header/icons'
+import { useLanguage } from '@/i18n'
+import { PianoIcon } from '@/components/header'
 import { WarningIcon } from './icons'
 
 /** Empty / unsupported state for the MIDI device picker.  Rendered when

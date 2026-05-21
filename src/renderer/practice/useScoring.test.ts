@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useScoring } from './useScoring'
-import type { MidiNote } from '../types'
+import type { MidiNote } from '@/types'
 
 const note = (id: string, time: number, duration = 1, midi = 60): MidiNote => ({
   id, midi, time, duration, velocity: 0.8, name: 'C4', track: 0, hand: 'right', channel: 0,

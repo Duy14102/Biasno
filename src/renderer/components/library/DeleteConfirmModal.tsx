@@ -1,8 +1,8 @@
 import React from 'react'
-import type { FileEntry } from '../../context/AppContext'
-import { useLanguage } from '../../i18n/LanguageContext'
+import type { FileEntry } from '@/context'
+import { useLanguage } from '@/i18n'
 import { FolderIcon, ImportIcon } from './icons'
-import ConfirmModal from '../common/ConfirmModal'
+import { ConfirmModal } from '@/components/common'
 
 interface Props {
   entry:     FileEntry

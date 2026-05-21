@@ -1,5 +1,5 @@
 import React from 'react'
-import { useEscape } from '../../hooks/useEscape'
+import { useEscape } from '@/hooks'
 
 type Accent = 'red' | 'amber' | 'blue'
 

@@ -10,10 +10,10 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { parseMidiBuffer } from '../../utils/midiUtils'
-import { preloadSheet, hasCachedSheetByName, evictSheetByName } from '../sheet/sheetPreload'
-import { useAppContext, type FileEntry } from '../../context/AppContext'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { parseMidiBuffer } from '@/utils'
+import { preloadSheet, hasCachedSheetByName, evictSheetByName } from '@/components/sheet'
+import { useAppContext, type FileEntry } from '@/context'
+import { useLanguage } from '@/i18n'
 
 export interface FolderConflict {
   folder:    string

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { audioEngine } from '../audio/AudioEngine'
-import { useLanguage } from '../i18n/LanguageContext'
-import { parseMidiBuffer } from '../utils/midiUtils'
+import { audioEngine } from '@/audio'
+import { useLanguage } from '@/i18n'
+import { parseMidiBuffer } from '@/utils'
 import { preloadSheet, hasCachedSheetByName } from './sheet/sheetPreload'
-import { LS } from '../constants/storageKeys'
-import { loadJSON } from '../utils/storage'
-import type { FileEntry } from '../context/AppContext'
+import { LS } from '@/constants'
+import { loadJSON } from '@/utils'
+import type { FileEntry } from '@/context'
 
 async function preloadPersistedSheets(): Promise<void> {
   const list = loadJSON<FileEntry[]>(LS.FILE_LIST, [], (v): v is FileEntry[] => Array.isArray(v))

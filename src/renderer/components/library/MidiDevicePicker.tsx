@@ -4,10 +4,10 @@
 // user can see what's known and either plug them back in or forget them.
 
 import React from 'react'
-import { useMidi, type MidiDeviceView } from '../../context/MidiContext'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useMidi, type MidiDeviceView } from '@/context'
+import { useLanguage } from '@/i18n'
 import DevicePanel from './DevicePanel'
-import { PianoIcon } from '../header/icons'
+import { PianoIcon } from '@/components/header'
 import { CloseIcon } from './icons'
 
 export default function MidiDevicePicker(): React.JSX.Element {

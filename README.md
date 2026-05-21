@@ -191,6 +191,13 @@ src/
 - `components/<feature>/` — UI + the feature-specific hook, so the feature is self-contained and easy to grep.
 - `types/` split per-domain; `index.ts` re-exports for convenience.
 
+**Import convention**
+
+- Every folder has an `index.ts` barrel. Cross-folder imports go through the barrel, e.g. `import { formatTimeSec } from '@/utils'` — never `'../../utils/format'`.
+- The `@/` alias resolves to `src/renderer/` and is configured in `tsconfig.web.json`, `electron.vite.config.ts`, and `vitest.config.ts`.
+- Same-folder imports stay relative (`./xxx`) — avoids self-cycles through the barrel.
+- Test files (`*.test.ts`) co-located with sources also use `./xxx` for the unit under test.
+
 ---
 
 ## Architecture notes

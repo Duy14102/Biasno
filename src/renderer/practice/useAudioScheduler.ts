@@ -14,8 +14,8 @@
 // wait for the next interval tick.
 
 import { useCallback, useEffect, useRef } from 'react'
-import type { MidiNote, MidiFileData } from '../types'
-import { audioEngine } from '../audio/AudioEngine'
+import type { MidiNote, MidiFileData } from '@/types'
+import { audioEngine } from '@/audio'
 import { LOOKAHEAD_REAL_MS } from './constants'
 import type { NoteState } from './noteState'
 

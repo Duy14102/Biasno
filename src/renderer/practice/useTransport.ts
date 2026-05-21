@@ -9,8 +9,8 @@
 // the rewind button, the progress bar drag, or the loop-wrap path.
 
 import { useCallback } from 'react'
-import type { MidiFileData, LoopRegion, Hand } from '../types'
-import { audioEngine } from '../audio/AudioEngine'
+import type { MidiFileData, LoopRegion, Hand } from '@/types'
+import { audioEngine } from '@/audio'
 import { REWIND_AMOUNT } from './constants'
 import type { NoteState } from './noteState'
 

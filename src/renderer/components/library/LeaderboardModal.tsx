@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
-import type { TranslationKey } from '../../i18n/translations'
-import { getScores, clearScores, addScore, type ScoreEntry } from '../../practice/leaderboard'
-import type { PracticeMode } from '../../types'
+import { useLanguage } from '@/i18n'
+import type { TranslationKey } from '@/i18n'
+import { getScores, clearScores, addScore, type ScoreEntry } from '@/practice'
+import type { PracticeMode } from '@/types'
 import {
   parseMode, handLabelKey, skillLabelKey, modeLabel,
   type Skill, type HandFilter,
-} from '../../practice/mode'
-import { formatShortDate, formatTimeSec } from '../../utils/format'
+} from '@/practice'
+import { formatShortDate, formatTimeSec } from '@/utils'
 
 interface Props {
   songName: string

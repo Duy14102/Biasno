@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useLayoutEffect, useCallback } from 'react'
-import type { MidiNote, NoteVisualState } from '../../types'
-import { useTheme } from '../../context/ThemeContext'
+import type { MidiNote, NoteVisualState } from '@/types'
+import { useTheme } from '@/context'
 import {
   isBlackKey, getWhiteKeyIndex, getBlackKeyLeftWhite,
   PIANO_RANGES, type KeyCount, type PianoRange,
-} from '../../utils/noteUtils'
+} from '@/utils'
 
 const PX_PER_SECOND = 240
 const LOOK_AHEAD    = 4.5   // seconds ahead to show notes

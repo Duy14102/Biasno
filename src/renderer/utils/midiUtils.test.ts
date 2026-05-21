@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { filterNotesByMode } from './midiUtils'
-import type { MidiNote, Hand } from '../types'
+import type { MidiNote, Hand } from '@/types'
 
 const n = (id: string, hand: Hand, midi = 60): MidiNote => ({
   id, midi, time: 0, duration: 1, velocity: 0.8, name: '?',

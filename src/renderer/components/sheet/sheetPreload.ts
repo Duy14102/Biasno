@@ -12,7 +12,7 @@
 // shows the full piece.
 
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
-import type { MidiFileData } from '../types'
+import type { MidiFileData } from '@/components'
 import { midiToMusicXml } from './musicXmlBuilder'
 
 // Extra per-render data the SheetMusic component fills in on first attach.

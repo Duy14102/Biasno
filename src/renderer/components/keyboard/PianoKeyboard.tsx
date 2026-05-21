@@ -2,8 +2,8 @@ import React, { useMemo, useCallback } from 'react'
 import {
   isBlackKey, getWhiteKeyIndex, getBlackKeyLeftWhite,
   PIANO_RANGES, type KeyCount,
-} from '../../utils/noteUtils'
-import type { Hand } from '../../types'
+} from '@/utils'
+import type { Hand } from '@/types'
 
 const WHITE_NOTE_NAMES = ['C','','D','','E','F','','G','','A','','B']
 

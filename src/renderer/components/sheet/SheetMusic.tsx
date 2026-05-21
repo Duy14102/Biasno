@@ -1,11 +1,11 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
-import type { MidiFileData, Hand } from '../../types'
+import type { MidiFileData, Hand } from '@/types'
 import { getCachedSheet, preloadSheet, attachCachedTo, detachCachedToStorage } from './sheetPreload'
 import { collectNoteRefs, bsearchStep, lowerBoundRefs, type NoteRef } from './noteRefs'
 import { clearHighlights, colorFullNote } from './highlighting'
 import { resetScrollState, scrollToCursor } from './scrollToCursor'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useLanguage } from '@/i18n'
 
 // ─── Floating-button icons ───────────────────────────────────────────────────
 function LockClosedIcon(): React.JSX.Element {

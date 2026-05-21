@@ -1,7 +1,7 @@
 import React from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useLanguage } from '@/i18n'
 import { WarningIcon } from './icons'
-import ConfirmModal from '../common/ConfirmModal'
+import { ConfirmModal } from '@/components/common'
 
 interface Props {
   folder:    string

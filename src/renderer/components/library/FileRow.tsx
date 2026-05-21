@@ -1,8 +1,8 @@
 import React from 'react'
-import type { FileEntry } from '../../context/AppContext'
+import type { FileEntry } from '@/context'
 import { MusicBars, FolderIcon, ImportIcon, TrashIcon } from './icons'
-import { useLanguage } from '../../i18n/LanguageContext'
-import { formatTimeSec } from '../../utils/format'
+import { useLanguage } from '@/i18n'
+import { formatTimeSec } from '@/utils'
 
 const formatDur = (s?: number): string => (s ? formatTimeSec(s) : '')
 

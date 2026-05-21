@@ -17,10 +17,10 @@
 // OS device list mid-session, surface a notice so any page can render a toast.
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import type { MidiDevice } from '../types'
-import { useLanguage } from '../i18n/LanguageContext'
-import { LS } from '../constants/storageKeys'
-import { loadJSON, saveJSON } from '../utils/storage'
+import type { MidiDevice } from '@/types'
+import { useLanguage } from '@/i18n'
+import { LS } from '@/constants'
+import { loadJSON, saveJSON } from '@/utils'
 
 const MIN_CONNECT_MS = 350
 

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
-import type { MidiFileData, PracticeSettings, PracticeMode } from '../types'
-import { LS } from '../constants/storageKeys'
-import { loadJSON, saveJSON, removeKey, isPlainObject } from '../utils/storage'
+import type { MidiFileData, PracticeSettings, PracticeMode } from '@/types'
+import { LS } from '@/constants'
+import { loadJSON, saveJSON, removeKey, isPlainObject } from '@/utils'
 
 export interface FileEntry {
   name: string

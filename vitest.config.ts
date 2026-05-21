@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config'
+import { resolve } from 'path'
 
 export default defineConfig({
   test: {
@@ -7,7 +8,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@renderer': new URL('./src/renderer', import.meta.url).pathname,
+      '@renderer': resolve(__dirname, 'src/renderer'),
+      '@':         resolve(__dirname, 'src/renderer'),
     },
   },
 })

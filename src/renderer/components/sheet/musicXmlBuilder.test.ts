@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { midiToMusicXml } from './musicXmlBuilder'
-import type { MidiNote, Hand } from '../../types'
+import type { MidiNote, Hand } from '@/types'
 
 const note = (
   id: string, midi: number, time: number, duration: number, hand: Hand = 'right',

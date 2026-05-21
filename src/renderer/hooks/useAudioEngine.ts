@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { audioEngine } from '../audio/AudioEngine'
+import { audioEngine } from '@/audio'
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 

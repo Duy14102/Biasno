@@ -1,4 +1,4 @@
-import type { PracticeMode } from '../types'
+import type { PracticeMode } from '@/types'
 import type { TranslationKey } from './translations'
 
 /** Map each PracticeMode to the translation key used in the mode-change

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import ToggleSwitch from './ToggleSwitch'
 import { DROPDOWN_CSS } from './modeGroups'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useLanguage } from '@/i18n'
 import {
   GearIcon, VolMuteIcon, VolLowIcon, VolMedIcon, VolHighIcon,
   ZoomIcon, MeasureIcon, CountdownIcon,

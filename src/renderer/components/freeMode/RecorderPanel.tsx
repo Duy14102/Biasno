@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
-import type { FreeSnapshot } from '../../freeMode/types'
+import { useLanguage } from '@/i18n'
+import type { FreeSnapshot } from '@/freeMode'
 import TrimRange         from './TrimRange'
 import ExportMenu        from './ExportMenu'
 import SpeedControl      from './SpeedControl'
@@ -10,7 +10,7 @@ import {
   UndoIcon, RedoIcon, TrashIcon, ScissorsIcon,
   PlusCircleIcon,
 } from './icons'
-import { formatTimeMs } from '../../utils/format'
+import { formatTimeMs } from '@/utils'
 
 interface Props {
   isRecording:  boolean

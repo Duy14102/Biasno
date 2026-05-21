@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
-import type { LibraryEntry } from '../../freeMode/library'
+import { useLanguage } from '@/i18n'
+import type { LibraryEntry } from '@/freeMode'
 import { CloseIcon, TrashIcon, FolderMusicIcon, LibraryIcon, MicIcon } from './icons'
-import { formatTimeMs, formatDateTime } from '../../utils/format'
+import { formatTimeMs, formatDateTime } from '@/utils'
 
 interface Props {
   entries:    LibraryEntry[]

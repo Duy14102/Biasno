@@ -1,6 +1,6 @@
-import type { PracticeMode } from '../types'
-import { LS } from '../constants/storageKeys'
-import { loadJSON, saveJSON, isPlainObject } from '../utils/storage'
+import type { PracticeMode } from '@/types'
+import { LS } from '@/constants'
+import { loadJSON, saveJSON, isPlainObject } from '@/utils'
 
 export interface ScoreEntry {
   score:      number

@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { DICTIONARIES, type Lang, type TranslationKey } from './translations'
-import { LS } from '../constants/storageKeys'
+import { LS } from '@/constants'
 
 interface LanguageContextValue {
   lang:    Lang

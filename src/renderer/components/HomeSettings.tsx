@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useTheme }    from '../context/ThemeContext'
-import { useLanguage } from '../i18n/LanguageContext'
-import { LANGUAGES, type Lang } from '../i18n/translations'
+import { useTheme }    from '@/context'
+import { useLanguage } from '@/i18n'
+import { LANGUAGES, type Lang } from '@/i18n'
 
 // ─── Animation styles ────────────────────────────────────────────────────────
 // `settingsDdEnter` — panel fade + slide on open.

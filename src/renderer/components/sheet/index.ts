@@ -1,0 +1,6 @@
+export { default as SheetMusic } from './SheetMusic'
+export * from './highlighting'
+export * from './musicXmlBuilder'
+export * from './noteRefs'
+export * from './scrollToCursor'
+export * from './sheetPreload'

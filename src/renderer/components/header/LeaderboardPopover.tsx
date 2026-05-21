@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ToggleSwitch from './ToggleSwitch'
 import { DROPDOWN_CSS } from './modeGroups'
-import { useLanguage } from '../../i18n/LanguageContext'
-import { getScores, type ScoreEntry } from '../../practice/leaderboard'
-import type { PracticeMode } from '../../types'
-import { formatShortDate, formatTimeSec } from '../../utils/format'
+import { useLanguage } from '@/i18n'
+import { getScores, type ScoreEntry } from '@/practice'
+import type { PracticeMode } from '@/types'
+import { formatShortDate, formatTimeSec } from '@/utils'
 
 interface Props {
   songName:         string

@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react'
-import type { LoopRegion } from '../types'
-import { formatTimeSec } from '../utils/format'
+import type { LoopRegion } from '@/types'
+import { formatTimeSec } from '@/utils'
 
 interface ProgressBarProps {
   duration: number

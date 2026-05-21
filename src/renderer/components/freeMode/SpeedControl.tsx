@@ -1,5 +1,5 @@
 import React from 'react'
-import { MinusIcon, PlusIcon } from '../header/icons'
+import { MinusIcon, PlusIcon } from '@/components/header'
 
 // Six fixed presets — same range as PracticeHeader's BPM multiplier, so the
 // vocabulary feels consistent across the app.  Anything outside this set

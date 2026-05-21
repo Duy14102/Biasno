@@ -1,19 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAppContext } from '../context/AppContext'
-import { useLanguage } from '../i18n/LanguageContext'
-import type { TranslationKey } from '../i18n/translations'
-import type { PracticeMode } from '../types'
+import { useAppContext } from '@/context'
+import { useLanguage } from '@/i18n'
+import type { TranslationKey } from '@/i18n'
+import type { PracticeMode } from '@/types'
 import {
   BackIcon, ArrowRightIcon, CountdownIcon,
   RightHandIcon, LeftHandIcon, BothHandsIcon,
   EyeIcon, MusicNoteIcon, MetronomeIcon, TargetIcon,
-} from '../components/header/icons'
-import LeaderboardModal from '../components/library/LeaderboardModal'
-import { getBestScore } from '../practice/leaderboard'
-import { useChallengeEnabled } from '../practice/useChallengeEnabled'
-import { parseMode, type Skill, type HandFilter as Hand } from '../practice/mode'
-import { formatTimeSec } from '../utils/format'
+} from '@/components/header'
+import { LeaderboardModal } from '@/components/library'
+import { getBestScore } from '@/practice'
+import { useChallengeEnabled } from '@/practice'
+import { parseMode, type Skill, type HandFilter as Hand } from '@/practice'
+import { formatTimeSec } from '@/utils'
 
 type IconCmp = React.FC<{ className?: string }>
 

@@ -27,7 +27,9 @@ npm run dev         # hot-reload dev
 npm run build       # bundle main + preload + renderer into ./out
 npm run start       # run the built bundle without packaging
 npm run lint        # ESLint over src/
+npm run typecheck   # tsc --noEmit for both web + node configs
 npm run test        # Vitest (unit tests for utils + practice/mode)
+npm run check       # typecheck + lint + test + build (fails fast on first error)
 npm run package     # Windows portable build into ./release/win-unpacked
 ```
 

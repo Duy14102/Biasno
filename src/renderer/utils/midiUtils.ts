@@ -35,7 +35,7 @@ export async function parseMidiBuffer(buffer: ArrayBuffer, fileName: string): Pr
         name: note.name || midiToNoteName(note.midi),
         track: trackIndex,
         hand: resolvedHand,
-        channel: note.channel ?? 0,
+        channel: track.channel ?? 0,
       })
     })
   })

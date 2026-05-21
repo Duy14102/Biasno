@@ -1,29 +1,29 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AppProvider } from './context/AppContext'
-import { ThemeProvider } from './context/ThemeContext'
-import { LanguageProvider } from './i18n/LanguageContext'
-import { MidiProvider } from './context/MidiContext'
-import { AudioGate } from './components/AudioGate'
-import MidiDisconnectToast from './components/MidiDisconnectToast'
-import HomePage from './pages/HomePage'
-import ModePage from './pages/ModePage'
-import PracticePage from './pages/PracticePage'
-import FreeModePage from './pages/FreeModePage'
+import { AppProvider, MidiProvider, ThemeProvider } from '@/context'
+import { LanguageProvider } from '@/i18n'
+import { AudioGate, MidiDisconnectToast } from '@/components'
+import { HomePage, ModePage, PracticePage, FreeModePage } from '@/pages'
 
-export default function App() {
+// Opt into React Router v7 defaults now so the eventual major bump is silent.
+const ROUTER_FUTURE = {
+  v7_startTransition:   true,
+  v7_relativeSplatPath: true,
+} as const
+
+export default function App(): React.JSX.Element {
   return (
     <ThemeProvider>
       <LanguageProvider>
         <AudioGate>
           <AppProvider>
             <MidiProvider>
-              <HashRouter>
+              <HashRouter future={ROUTER_FUTURE}>
                 <Routes>
-                  <Route path="/" element={<HomePage />} />
-                  <Route path="/mode" element={<ModePage />} />
+                  <Route path="/"         element={<HomePage />} />
+                  <Route path="/mode"     element={<ModePage />} />
                   <Route path="/practice" element={<PracticePage />} />
-                  <Route path="/free" element={<FreeModePage />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
+                  <Route path="/free"     element={<FreeModePage />} />
+                  <Route path="*"         element={<Navigate to="/" replace />} />
                 </Routes>
               </HashRouter>
               {/* Outside Routes so a mid-practice unplug surfaces on every page. */}

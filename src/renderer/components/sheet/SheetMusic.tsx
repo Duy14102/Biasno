@@ -149,11 +149,15 @@ function SheetMusic({
       } else {
         noteRefsRef.current = collectNoteRefs(osmd, bpm)
 
+        // Walk the iterator (not the cursor) — cursor.next() repaints the SVG
+        // every step which costs hundreds of ms on long songs.  iterator-only
+        // walk is JS-bound; the cursor's visual position is set once below.
         const collected: number[] = []
         osmd.cursor.reset()
-        while (!osmd.cursor.Iterator.EndReached) {
-          collected.push(osmd.cursor.Iterator.currentTimeStamp.RealValue * 4 * 60 / bpm)
-          osmd.cursor.next()
+        const collectIt = osmd.cursor.Iterator
+        while (!collectIt.EndReached) {
+          collected.push(collectIt.currentTimeStamp.RealValue * 4 * 60 / bpm)
+          collectIt.moveToNext()
         }
         stepsRef.current = collected
         cached.extras = { noteRefs: noteRefsRef.current, steps: collected, lastStepIdx: 0 }
@@ -172,7 +176,9 @@ function SheetMusic({
         while (stepIdxRef.current < target) { osmd.cursor.next(); stepIdxRef.current++ }
       } else {
         osmd.cursor.reset()
-        for (let i = 0; i < target; i++) osmd.cursor.next()
+        const it = osmd.cursor.Iterator
+        for (let i = 0; i < target; i++) it.moveToNext()
+        osmd.cursor.update()
         stepIdxRef.current = target
       }
       loadedRef.current = true
@@ -229,11 +235,19 @@ function SheetMusic({
           const curIdx = stepIdxRef.current
           const target = bsearchStep(steps, ct)
           if (target !== curIdx) {
+            // Small forward step (≤3) — playback advance: cheap, do it visually
+            // step-by-step so the cursor animates smoothly across notes.
+            // Anything larger (seek, loop wrap, large jump) — advance the
+            // iterator WITHOUT per-step DOM updates, then ONE visual update
+            // at the end.  Cursor.next() costs ~1 ms (style + layout); 600
+            // calls is the 0.5–1 s freeze.  iterator.moveToNext() is JS only.
             if (target > curIdx && target - curIdx <= 3) {
               while (stepIdxRef.current < target) { osmd.cursor.next(); stepIdxRef.current++ }
             } else {
               osmd.cursor.reset()
-              for (let i = 0; i < target; i++) osmd.cursor.next()
+              const it = osmd.cursor.Iterator
+              for (let i = 0; i < target; i++) it.moveToNext()
+              osmd.cursor.update()
               stepIdxRef.current = target
             }
             if (autoScrollRef.current) scrollToCursor(scrollRef.current)
@@ -269,7 +283,9 @@ function SheetMusic({
         const steps  = stepsRef.current
         const target = steps.length ? bsearchStep(steps, currentTimeRef.current) : 0
         osmd.cursor.reset()
-        for (let i = 0; i < target; i++) osmd.cursor.next()
+        const it = osmd.cursor.Iterator
+        for (let i = 0; i < target; i++) it.moveToNext()
+        osmd.cursor.update()
         stepIdxRef.current = target
         if (autoScrollRef.current) scrollToCursor(scrollRef.current, true)
       } catch (e) { console.error('[SheetMusic resize re-render]', e) }

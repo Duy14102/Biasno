@@ -47,7 +47,9 @@ export interface RecorderApi {
 interface Options {
   // Fires immediately after a recording is stopped, with the just-captured
   // snapshot.  hadNotes is false when nothing was actually played.
-  onAfterStop?: (snap: FreeSnapshot, hadNotes: boolean) => void
+  // continued = the take was started via continueRecord (extends an existing
+  // library entry); false = fresh take that should land as a new entry.
+  onAfterStop?: (snap: FreeSnapshot, hadNotes: boolean, continued: boolean) => void
   // Fires when the working draft is wiped via clear().
   onAfterClear?: () => void
 }
@@ -84,6 +86,10 @@ export function useRecorder(opts: Options = {}): RecorderApi {
   const liveNotes   = useRef<RecordedNote[]>([])
   const isRecordingRef = useRef(false)
   const idRef = useRef(0)
+  // Tracks whether the current take is an extension (continueRecord) or a
+  // fresh start (startRecord) — read by stopRecord so the page can decide
+  // whether to update the existing library entry or create a new one.
+  const continuedRef = useRef(false)
 
   useEffect(() => { isRecordingRef.current = isRecording }, [isRecording])
 
@@ -137,6 +143,7 @@ export function useRecorder(opts: Options = {}): RecorderApi {
     idRef.current = 0
     recStartRef.current = performance.now()
     isRecordingRef.current = true
+    continuedRef.current = false
     setIsRecording(true)
   }, [])
 
@@ -154,6 +161,7 @@ export function useRecorder(opts: Options = {}): RecorderApi {
       idRef.current = 0
       recStartRef.current = performance.now()
       isRecordingRef.current = true
+      continuedRef.current = false
       setIsRecording(true)
       return
     }
@@ -162,6 +170,7 @@ export function useRecorder(opts: Options = {}): RecorderApi {
     idRef.current = snapshot.notes.length
     recStartRef.current = performance.now() - snapshot.durationMs
     isRecordingRef.current = true
+    continuedRef.current = true
     setIsRecording(true)
   }, [snapshot])
 
@@ -186,7 +195,9 @@ export function useRecorder(opts: Options = {}): RecorderApi {
     baselineRef.current = next
     setSnapshot(next)
     bumpHistory()
-    onAfterStop?.(next, notes.length > 0)
+    const wasContinuing = continuedRef.current
+    continuedRef.current = false
+    onAfterStop?.(next, notes.length > 0, wasContinuing)
   }, [bumpHistory, onAfterStop])
 
   const clear = useCallback(() => {

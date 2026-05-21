@@ -56,11 +56,29 @@ export default function FreeModePage(): React.JSX.Element {
   const [speed, setSpeed] = useState(1)
 
   // ─── Recorder ──────────────────────────────────────────────────────
-  // On stop: persist the take to the library so Clear can't lose it.  The
-  // id is held in activeId — subsequent edits (trim, name, author) update
-  // the same entry in place.
-  const handleAfterStop = useCallback((snap: FreeSnapshot, hadNotes: boolean) => {
+  // On stop: persist the take to the library so Clear can't lose it.
+  // Continue extends the active entry in place (one library row per piece);
+  // a fresh Record creates a new entry — the previous take stays preserved.
+  // activeIdRef so the callback sees the latest id without needing it in deps
+  // (which would re-bind the callback on every entry update).
+  const activeIdRef = useRef<string | null>(null)
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+
+  const handleAfterStop = useCallback((snap: FreeSnapshot, hadNotes: boolean, continued: boolean) => {
     if (!hadNotes) return
+    const currentId = activeIdRef.current
+    if (continued && currentId) {
+      updateEntry(currentId, {
+        name: fileName,
+        author,
+        notes: snap.notes,
+        durationMs: snap.durationMs,
+        trimStartMs: snap.trimStartMs,
+        trimEndMs:   snap.trimEndMs,
+      })
+      refreshEntries()
+      return
+    }
     const entry = createEntry({
       name: fileName,
       author,

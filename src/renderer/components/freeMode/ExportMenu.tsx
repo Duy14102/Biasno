@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useLanguage } from '@/i18n'
 import { DownloadIcon, ChevronDownIcon, NoteIcon, StaffIcon, PdfIcon } from './icons'
 
 interface Props {

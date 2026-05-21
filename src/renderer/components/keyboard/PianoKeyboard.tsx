@@ -2,8 +2,8 @@ import React, { useMemo, useCallback } from 'react'
 import {
   isBlackKey, getWhiteKeyIndex, getBlackKeyLeftWhite,
   PIANO_RANGES, type KeyCount,
-} from '../../utils/noteUtils'
-import type { Hand } from '../../types'
+} from '@/utils'
+import type { Hand } from '@/types'
 
 const WHITE_NOTE_NAMES = ['C','','D','','E','F','','G','','A','','B']
 
@@ -98,7 +98,7 @@ export default function PianoKeyboard({
   const { whiteKeys, blackKeys } = useMemo(() => {
     const whites: number[] = [], blacks: number[] = []
     for (let m = range.min; m <= range.max; m++) {
-      isBlackKey(m) ? blacks.push(m) : whites.push(m)
+      if (isBlackKey(m)) blacks.push(m); else whites.push(m)
     }
     return { whiteKeys: whites, blackKeys: blacks }
   }, [range.min, range.max])

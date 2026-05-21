@@ -1,0 +1,8 @@
+export { default as ClearConfirmModal } from './ClearConfirmModal'
+export { default as ExportMenu }        from './ExportMenu'
+export { default as FreeModeHeader }    from './FreeModeHeader'
+export { default as LibraryModal }      from './LibraryModal'
+export { default as RecorderPanel }     from './RecorderPanel'
+export { default as SpeedControl }      from './SpeedControl'
+export { default as TrimRange }         from './TrimRange'
+export * from './icons'

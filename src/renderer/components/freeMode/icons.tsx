@@ -27,11 +27,6 @@ export const StopIcon = (p: IconProps) => (
   <Svg {...p}><rect x="6" y="6" width="12" height="12" rx="1.5"/></Svg>
 )
 
-// Filled circle — the "live" dot that pulses while recording.
-export const DotIcon = (p: IconProps) => (
-  <Svg {...p}><circle cx="12" cy="12" r="6"/></Svg>
-)
-
 // ─── Transport ──────────────────────────────────────────────────────────────
 export const PlayIcon  = (p: IconProps) => <Svg {...p}><path d="M8 5v14l11-7L8 5z"/></Svg>
 export const PauseIcon = (p: IconProps) => <Svg {...p}><path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z"/></Svg>
@@ -85,14 +80,6 @@ export const FolderMusicIcon = (p: IconProps) => (
 )
 
 // ─── Export targets ────────────────────────────────────────────────────────
-// Generic file glyph used as a base for the three export buttons; the label
-// (MIDI / MusicXML / PDF) lives next to it.
-export const FileDownloadIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 13v3h-2v-3H8l4-4 4 4h-3z"/>
-  </Svg>
-)
-
 // Single eighth-note glyph — used for MIDI button (audio).
 export const NoteIcon = (p: IconProps) => (
   <Svg {...p}>

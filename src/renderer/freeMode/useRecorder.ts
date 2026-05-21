@@ -10,8 +10,8 @@
 // meaningful since the cleared recording is preserved in the library anyway.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useMidi } from '../context/MidiContext'
-import { audioEngine } from '../audio/AudioEngine'
+import { useMidi } from '@/context'
+import { audioEngine } from '@/audio'
 import type { FreeSnapshot, RecordedNote } from './types'
 
 const EMPTY: FreeSnapshot = {

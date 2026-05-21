@@ -1,13 +1,7 @@
-// Persistent library of past Free Mode recordings.
-//
-// Stored in localStorage under a single key — small enough that JSON round-trip
-// is fine (cap at 50 entries; new ones evict the oldest).  Clearing the live
-// recorder draft no longer destroys anything — every Stop pushes a fresh
-// entry here automatically, and Load/Delete go through this module.
-
 import type { RecordedNote } from './types'
+import { LS } from '@/constants'
+import { loadJSON, saveJSON } from '@/utils'
 
-const KEY = 'freeMode:library:v1'
 const MAX_ENTRIES = 50
 
 export interface LibraryEntry {
@@ -22,34 +16,18 @@ export interface LibraryEntry {
   updatedAt:   number
 }
 
-function readAll(): LibraryEntry[] {
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed as LibraryEntry[]
-  } catch {
-    return []
-  }
-}
+const readAll = (): LibraryEntry[] =>
+  loadJSON<LibraryEntry[]>(LS.FREE_LIBRARY, [], (v): v is LibraryEntry[] => Array.isArray(v))
 
-function writeAll(entries: LibraryEntry[]): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(entries))
-  } catch { /* quota — silent */ }
-}
+const writeAll = (entries: LibraryEntry[]): void => saveJSON(LS.FREE_LIBRARY, entries)
 
 function genId(): string {
-  // ms timestamp + 4-char random tail.  Unique enough for a per-user library;
-  // ordered by creation when sorted lexicographically.
   const t = Date.now().toString(36)
   const r = Math.random().toString(36).slice(2, 6)
   return `${t}-${r}`
 }
 
 export function listEntries(): LibraryEntry[] {
-  // Newest first.
   return readAll().slice().sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
@@ -64,7 +42,6 @@ export function createEntry(
   const now = Date.now()
   const entry: LibraryEntry = { ...partial, id: genId(), createdAt: now, updatedAt: now }
   const next = [entry, ...all]
-  // Evict oldest if over cap.  Sort by updatedAt asc and drop tail.
   if (next.length > MAX_ENTRIES) {
     next.sort((a, b) => b.updatedAt - a.updatedAt)
     next.length = MAX_ENTRIES

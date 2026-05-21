@@ -3,8 +3,8 @@
 // right / left / both) and what colour each group wears.  Used by the mode
 // badge + dropdown in the header.
 
-import type { PracticeMode } from '../../types'
-import type { TranslationKey } from '../../i18n/translations'
+import type { PracticeMode } from '@/types'
+import type { TranslationKey } from '@/i18n'
 
 export interface ModeItem  { id: PracticeMode; subKey: TranslationKey }
 export interface ModeGroup { key: string; labelKey: TranslationKey | null; items: ModeItem[] }

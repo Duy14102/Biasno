@@ -26,6 +26,10 @@ npm install
 npm run dev         # hot-reload dev
 npm run build       # bundle main + preload + renderer into ./out
 npm run start       # run the built bundle without packaging
+npm run lint        # ESLint over src/
+npm run typecheck   # tsc --noEmit for both web + node configs
+npm run test        # Vitest (unit tests for utils + practice/mode)
+npm run check       # typecheck + lint + test + build (fails fast on first error)
 npm run package     # Windows portable build into ./release/win-unpacked
 ```
 
@@ -146,23 +150,28 @@ src/
 ├── preload/          contextBridge — window.electronAPI.
 └── renderer/         React app.
     ├── audio/        AudioEngine — sample loading, scheduling, metronome.
+    ├── constants/    storageKeys — single source of truth for all biasno.* LS keys.
     ├── context/      AppContext (files, settings, prefs), MidiContext (Web MIDI),
     │                 ThemeContext (dark / light).
+    ├── hooks/        Cross-feature hooks (useAudioEngine, useEscape).
     ├── i18n/         LanguageContext + per-language dictionaries in locales/.
     ├── types/        Shared types split per domain (midi, practice, visual, device).
-    ├── utils/        midiUtils, noteUtils.
+    ├── utils/        midiUtils (parse), noteUtils (key geometry),
+    │                 format (m:ss / dates), storage (loadJSON / saveJSON).
     ├── pages/        HomePage · ModePage · PracticePage · FreeModePage.
     ├── practice/     PracticePage's engine + scoring.
     │                 ├ Playback: usePlayhead, useTransport, useModeChange,
     │                 │           useAudioScheduler, usePracticeInput,
     │                 │           useFlashTimer, useViewSwap.
-    │                 └ Scoring:  useScoring, useChallengeEnabled, leaderboard.
+    │                 ├ Scoring:  useScoring, useChallengeEnabled, leaderboard.
+    │                 └ Mode:     mode (parseMode, modeLabel, hand/skill helpers).
     ├── freeMode/     FreeModePage's hooks + helpers:
     │                 useRecorder (capture + trim undo/redo),
     │                 useFreePlayback (seek + speed + tail-cut playback),
     │                 freeModeExport (MIDI / MusicXML / PDF builders),
     │                 library (localStorage CRUD), types.
     └── components/
+        ├── common/   ConfirmModal scaffold + shared icons used across folders.
         ├── sheet/    SheetMusic + helpers (highlighting, refs, scroll, preload).
         ├── falling/  FallingNotes canvas.
         ├── keyboard/ PianoKeyboard.
@@ -171,7 +180,7 @@ src/
         │             ToggleSwitch + shared dropdown CSS.
         ├── library/  HomePage sub-components + useFileLibrary hook:
         │             FileRow, DevicePanel, MidiDevicePicker,
-        │             DeleteConfirmModal, LeaderboardModal.
+        │             DeleteConfirmModal, FolderConflictModal, LeaderboardModal.
         └── freeMode/ FreeModeHeader, RecorderPanel, TrimRange (waveform +
                       dual-thumb), ExportMenu, SpeedControl, LibraryModal,
                       ClearConfirmModal, icons.
@@ -183,6 +192,13 @@ src/
 - `practice/` — anything that exists because PracticePage exists.
 - `components/<feature>/` — UI + the feature-specific hook, so the feature is self-contained and easy to grep.
 - `types/` split per-domain; `index.ts` re-exports for convenience.
+
+**Import convention**
+
+- Every folder has an `index.ts` barrel. Cross-folder imports go through the barrel, e.g. `import { formatTimeSec } from '@/utils'` — never `'../../utils/format'`.
+- The `@/` alias resolves to `src/renderer/` and is configured in `tsconfig.web.json`, `electron.vite.config.ts`, and `vitest.config.ts`.
+- Same-folder imports stay relative (`./xxx`) — avoids self-cycles through the barrel.
+- Test files (`*.test.ts`) co-located with sources also use `./xxx` for the unit under test.
 
 ---
 

@@ -1,36 +1,14 @@
 import { useEffect, useState } from 'react'
-import { audioEngine } from '../audio/AudioEngine'
-import { useLanguage } from '../i18n/LanguageContext'
-import { parseMidiBuffer } from '../utils/midiUtils'
+import { audioEngine } from '@/audio'
+import { useLanguage } from '@/i18n'
+import { parseMidiBuffer } from '@/utils'
 import { preloadSheet, hasCachedSheetByName } from './sheet/sheetPreload'
+import { LS } from '@/constants'
+import { loadJSON } from '@/utils'
+import type { FileEntry } from '@/context'
 
-// Same key AppContext uses to persist the file list — read directly from
-// localStorage here because AudioGate sits ABOVE AppProvider, so the context
-// isn't available yet during splash.
-const LS_FILE_LIST = 'biasno.fileList'
-
-interface PersistedEntry {
-  name:     string
-  path:     string
-  duration?: number
-  source?:   'import' | 'folder'
-}
-
-function loadPersistedList(): PersistedEntry[] {
-  try {
-    const raw = localStorage.getItem(LS_FILE_LIST)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch { return [] }
-}
-
-// Walk every persisted file, parse it, and pre-render its sheet into the
-// OSMD LRU cache so when the home page mounts every row is click-instant
-// and no loading bars appear.  Sequential with a frame yield between entries
-// so OSMD renders don't all block the same animation frame.
 async function preloadPersistedSheets(): Promise<void> {
-  const list = loadPersistedList()
+  const list = loadJSON<FileEntry[]>(LS.FILE_LIST, [], (v): v is FileEntry[] => Array.isArray(v))
   for (const entry of list) {
     if (hasCachedSheetByName(entry.name)) continue
     try {

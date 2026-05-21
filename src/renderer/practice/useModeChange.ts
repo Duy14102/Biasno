@@ -12,9 +12,9 @@
 //   7. Resume playback if we were playing.
 
 import { useState, useCallback } from 'react'
-import type { Hand, MidiFileData, PracticeMode } from '../types'
-import { audioEngine } from '../audio/AudioEngine'
-import { modePrefsKey, type ModePrefs } from '../context/AppContext'
+import type { Hand, MidiFileData, PracticeMode } from '@/types'
+import { audioEngine } from '@/audio'
+import { modePrefsKey, type ModePrefs } from '@/context'
 import type { NoteState } from './noteState'
 
 interface Args {

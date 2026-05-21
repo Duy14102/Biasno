@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
-import type { PracticeMode } from '../../types'
+import type { PracticeMode } from '@/types'
 import {
   MODE_GROUPS, GROUP_COLORS, modeGroup, modeFullLabel, DROPDOWN_CSS,
 } from './modeGroups'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useLanguage } from '@/i18n'
 
 interface Props {
   mode:         PracticeMode

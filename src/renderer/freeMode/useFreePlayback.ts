@@ -14,8 +14,8 @@
 //     so clicking somewhere and then hitting Play resumes from that point.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { audioEngine } from '../audio/AudioEngine'
-import type { FreeSnapshot, RecordedNote } from './types'
+import { audioEngine } from '@/audio'
+import type { FreeSnapshot } from './types'
 
 interface Args {
   snapshot: FreeSnapshot

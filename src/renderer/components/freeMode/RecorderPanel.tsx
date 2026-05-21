@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
-import type { FreeSnapshot } from '../../freeMode/types'
+import { useLanguage } from '@/i18n'
+import type { FreeSnapshot } from '@/freeMode'
 import TrimRange         from './TrimRange'
 import ExportMenu        from './ExportMenu'
 import SpeedControl      from './SpeedControl'
@@ -10,6 +10,7 @@ import {
   UndoIcon, RedoIcon, TrashIcon, ScissorsIcon,
   PlusCircleIcon,
 } from './icons'
+import { formatTimeMs } from '@/utils'
 
 interface Props {
   isRecording:  boolean
@@ -64,12 +65,7 @@ const PANEL_STYLES = `
 .fm-section { animation: fm-section-in 280ms ease-out both; }
 `
 
-function fmt(ms: number): string {
-  const total = Math.max(0, ms) / 1000
-  const m = Math.floor(total / 60)
-  const s = total - m * 60
-  return `${m}:${s.toFixed(1).padStart(4, '0')}`
-}
+const fmt = (ms: number): string => formatTimeMs(ms, { decimals: 1 })
 
 export default function RecorderPanel({
   isRecording, isPlaying, snapshot, fileName, setFileName, author, setAuthor,

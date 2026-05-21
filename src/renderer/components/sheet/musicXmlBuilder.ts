@@ -1,4 +1,4 @@
-import type { MidiNote, Hand } from '../types'
+import type { MidiNote, Hand } from '@/types'
 
 // ─── Duration table ───────────────────────────────────────────────────────────
 const DIVS = 16

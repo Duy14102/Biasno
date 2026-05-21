@@ -15,8 +15,8 @@
 // (and even then, the updaters are diffed to no-op when nothing changed).
 
 import { useCallback, useEffect, useRef } from 'react'
-import type { MidiNote, MidiFileData, LoopRegion, Hand } from '../types'
-import { audioEngine } from '../audio/AudioEngine'
+import type { MidiNote, MidiFileData, LoopRegion, Hand } from '@/types'
+import { audioEngine } from '@/audio'
 import { LOOP_RESET_AFTER, FLASH_ANTICIPATE_S } from './constants'
 import type { NoteState } from './noteState'
 

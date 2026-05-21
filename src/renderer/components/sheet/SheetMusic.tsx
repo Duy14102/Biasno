@@ -1,11 +1,11 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
-import type { MidiFileData, Hand } from '../../types'
+import type { MidiFileData, Hand } from '@/types'
 import { getCachedSheet, preloadSheet, attachCachedTo, detachCachedToStorage } from './sheetPreload'
 import { collectNoteRefs, bsearchStep, lowerBoundRefs, type NoteRef } from './noteRefs'
 import { clearHighlights, colorFullNote } from './highlighting'
 import { resetScrollState, scrollToCursor } from './scrollToCursor'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useLanguage } from '@/i18n'
 
 // ─── Floating-button icons ───────────────────────────────────────────────────
 function LockClosedIcon(): React.JSX.Element {
@@ -202,6 +202,7 @@ function SheetMusic({
       if (cached?.extras) cached.extras.lastStepIdx = stepIdxRef.current
       // Clear inline fill/stroke BEFORE detaching: cached container survives
       // in body across toggles, so styles left here would resurrect on attach.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       clearHighlights(prevHighRef.current)
       prevHighKeyRef.current = ''
       // Move the cached container back to body BEFORE React unmounts our

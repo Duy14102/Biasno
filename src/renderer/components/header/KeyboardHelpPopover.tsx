@@ -6,8 +6,8 @@
 // The two halves are contiguous so chord runs across both rows work.
 
 import React, { useEffect, useRef, useState } from 'react'
-import { useLanguage } from '../../i18n/LanguageContext'
-import { useMidi }     from '../../context/MidiContext'
+import { useLanguage } from '@/i18n'
+import { useMidi }     from '@/context'
 import { DROPDOWN_CSS } from './modeGroups'
 import { KeyboardIcon, LockIcon } from './icons'
 

@@ -1,12 +1,12 @@
 import React from 'react'
-import type { PracticeMode } from '../../types'
-import type { KeyCount } from '../../utils/noteUtils'
+import type { PracticeMode } from '@/types'
+import type { KeyCount } from '@/utils'
 import IconBtn             from './IconBtn'
 import ModeDropdown        from './ModeDropdown'
 import SettingsPanel       from './SettingsPanel'
 import KeyboardHelpPopover from './KeyboardHelpPopover'
 import LeaderboardPopover  from './LeaderboardPopover'
-import { useLanguage }     from '../../i18n/LanguageContext'
+import { useLanguage }     from '@/i18n'
 import {
   BackIcon, RewindIcon, FastFwdIcon, PlayIcon, PauseIcon, RestartIcon,
   MinusIcon, PlusIcon,

@@ -1,4 +1,4 @@
-import type { MidiNote, NoteVisualState } from '../types'
+import type { MidiNote, NoteVisualState } from '@/types'
 
 /** Per-note runtime state held by PracticePage.  Mirrors a MidiNote with
  *  three extra fields the playback engine mutates as the song progresses. */

@@ -9,9 +9,9 @@
 // count.  Releasing early reverts the note's visual state to 'active' so
 // the player can re-attempt.
 import { useCallback, useEffect } from 'react'
-import type { Hand } from '../types'
-import { audioEngine } from '../audio/AudioEngine'
-import { useMidi } from '../context/MidiContext'
+import type { Hand } from '@/types'
+import { audioEngine } from '@/audio'
+import { useMidi } from '@/context'
 import type { NoteState } from './noteState'
 import { TIMING_WINDOW_MS } from './constants'
 

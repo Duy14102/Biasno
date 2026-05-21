@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { LS } from '@/constants'
 
 export type Theme = 'dark' | 'light'
 
@@ -9,11 +10,10 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
-const STORAGE_KEY  = 'biasno.theme'
 
 function readInitial(): Theme {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
+    const stored = localStorage.getItem(LS.THEME)
     if (stored === 'dark' || stored === 'light') return stored
   } catch { /* ignore */ }
   return 'dark'
@@ -23,9 +23,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): Reac
   const [theme, setThemeState] = useState<Theme>(readInitial)
 
   useEffect(() => {
-    const root = document.documentElement
-    root.classList.toggle('dark', theme === 'dark')
-    try { localStorage.setItem(STORAGE_KEY, theme) } catch { /* ignore */ }
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    try { localStorage.setItem(LS.THEME, theme) } catch { /* ignore */ }
   }, [theme])
 
   const setTheme = useCallback((t: Theme) => setThemeState(t), [])

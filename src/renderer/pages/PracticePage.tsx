@@ -1,35 +1,37 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAppContext, modePrefsKey, LS_RESUME_POINTS } from '../context/AppContext'
-import { audioEngine }          from '../audio/AudioEngine'
-import { useAudioEngine }       from '../hooks/useAudioEngine'
-import { useAudioScheduler }    from '../practice/useAudioScheduler'
-import { usePracticeInput }     from '../practice/usePracticeInput'
-import { useViewSwap }          from '../practice/useViewSwap'
-import { useFlashTimer }        from '../practice/useFlashTimer'
-import { usePlayhead }          from '../practice/usePlayhead'
-import { useTransport }         from '../practice/useTransport'
-import { useModeChange }        from '../practice/useModeChange'
-import { useScoring }           from '../practice/useScoring'
-import { addScore }             from '../practice/leaderboard'
-import { useChallengeEnabled }  from '../practice/useChallengeEnabled'
+import { useAppContext, modePrefsKey } from '@/context'
+import { LS } from '@/constants'
+import { loadJSON, isPlainObject } from '@/utils'
+import { audioEngine }          from '@/audio'
+import { useAudioEngine }       from '@/hooks'
+import { useAudioScheduler }    from '@/practice'
+import { usePracticeInput }     from '@/practice'
+import { useViewSwap }          from '@/practice'
+import { useFlashTimer }        from '@/practice'
+import { usePlayhead }          from '@/practice'
+import { useTransport }         from '@/practice'
+import { useModeChange }        from '@/practice'
+import { useScoring }           from '@/practice'
+import { addScore }             from '@/practice'
+import { useChallengeEnabled }  from '@/practice'
 import {
   KEYBOARD_HEIGHT, NOTE_LOOK_AHEAD_S,
   LEAD_IN_TARGET, PRACTICE_TRANSITION_STYLE,
-} from '../practice/constants'
-import { useLanguage } from '../i18n/LanguageContext'
-import { MODE_FLASH_KEYS } from '../i18n/modeFlashKey'
-import type { NoteState } from '../practice/noteState'
-import PianoKeyboard  from '../components/keyboard/PianoKeyboard'
-import FallingNotes, { type NoteRenderState } from '../components/falling/FallingNotes'
-import SheetMusic     from '../components/sheet/SheetMusic'
-import ProgressBar    from '../components/ProgressBar'
-import PracticeHeader from '../components/header/PracticeHeader'
-import { PlayIcon } from '../components/header/icons'
-import type { MidiNote, LoopRegion, Hand, PracticeMode } from '../types'
-import { getActiveHands, requiresMelody } from '../utils/midiUtils'
-import { KEY_COUNTS, detectKeyCountFromName, type KeyCount } from '../utils/noteUtils'
-import { useMidi } from '../context/MidiContext'
+} from '@/practice'
+import { useLanguage } from '@/i18n'
+import { MODE_FLASH_KEYS } from '@/i18n'
+import type { NoteState } from '@/practice'
+import { PianoKeyboard }  from '@/components/keyboard'
+import { FallingNotes, type NoteRenderState } from '@/components/falling'
+import { SheetMusic }     from '@/components/sheet'
+import { ProgressBar }    from '@/components'
+import { PracticeHeader } from '@/components/header'
+import { PlayIcon } from '@/components/header'
+import type { MidiNote, LoopRegion, Hand, PracticeMode } from '@/types'
+import { getActiveHands, requiresMelody } from '@/practice'
+import { KEY_COUNTS, detectKeyCountFromName, type KeyCount } from '@/utils'
+import { useMidi } from '@/context'
 
 export default function PracticePage(): React.JSX.Element {
   const navigate = useNavigate()
@@ -552,14 +554,10 @@ export default function PracticePage(): React.JSX.Element {
   // using the same key AppContext owns.
   useEffect(() => {
     if (!midiFile) return
-    const flush = () => {
-      try {
-        const raw = localStorage.getItem(LS_RESUME_POINTS)
-        const prev = raw ? JSON.parse(raw) : {}
-        const next = { ...(prev && typeof prev === 'object' ? prev : {}),
-                       [midiFile.name]: { time: currentTimeRef.current, mode } }
-        localStorage.setItem(LS_RESUME_POINTS, JSON.stringify(next))
-      } catch { /* quota / parse */ }
+    const flush = (): void => {
+      const prev = loadJSON<Record<string, unknown>>(LS.RESUME_POINTS, {}, isPlainObject)
+      const next = { ...prev, [midiFile.name]: { time: currentTimeRef.current, mode } }
+      try { localStorage.setItem(LS.RESUME_POINTS, JSON.stringify(next)) } catch { /* quota */ }
     }
     window.addEventListener('beforeunload', flush)
     window.addEventListener('pagehide',     flush)

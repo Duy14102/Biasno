@@ -73,13 +73,14 @@ export class AudioEngine {
   }
 
   private _createSynth(): void {
-    this.fallbackSynth = new Tone.PolySynth(Tone.Synth, {
+    this.fallbackSynth = new Tone.PolySynth({
+      voice: Tone.Synth,
       maxPolyphony: 32,
       options: {
         oscillator: { type: 'triangle' },
         envelope: { attack: 0.003, decay: 2.0, sustain: 0.0, release: 2.0 },
-        volume: -4
-      }
+        volume: -4,
+      },
     }).toDestination()
     this.source  = 'synth'
     this.isReady = true

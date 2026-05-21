@@ -1,12 +1,10 @@
 import React from 'react'
-import type { FileEntry } from '../../context/AppContext'
+import type { FileEntry } from '@/context'
 import { MusicBars, FolderIcon, ImportIcon, TrashIcon } from './icons'
-import { useLanguage } from '../../i18n/LanguageContext'
+import { useLanguage } from '@/i18n'
+import { formatTimeSec } from '@/utils'
 
-function formatDur(s?: number): string {
-  if (!s) return ''
-  return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`
-}
+const formatDur = (s?: number): string => (s ? formatTimeSec(s) : '')
 
 interface Props {
   entry:        FileEntry

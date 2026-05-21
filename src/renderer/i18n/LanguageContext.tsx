@@ -1,16 +1,6 @@
-// ─── Language context ───────────────────────────────────────────────────────
-// Wraps the app and exposes:
-//   • lang     – currently selected language code
-//   • setLang  – switch language (also persists to localStorage)
-//   • t(key)   – look up the translated string for the current language
-//
-// Translations live in `translations.ts`.  Strings can contain `{name}`
-// placeholders that are filled from the `params` argument to `t`.
-
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { DICTIONARIES, type Lang, type TranslationKey } from './translations'
-
-const STORAGE_KEY = 'biasno.lang'
+import { LS } from '../constants/storageKeys'
 
 interface LanguageContextValue {
   lang:    Lang
@@ -22,7 +12,7 @@ const LanguageContext = createContext<LanguageContextValue | null>(null)
 
 function readInitial(): Lang {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
+    const stored = localStorage.getItem(LS.LANG)
     if (stored === 'vi' || stored === 'en') return stored
   } catch { /* localStorage may be unavailable */ }
   return 'vi'
@@ -32,7 +22,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }): R
   const [lang, setLangState] = useState<Lang>(readInitial)
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, lang) } catch { /* ignore */ }
+    try { localStorage.setItem(LS.LANG, lang) } catch { /* ignore */ }
   }, [lang])
 
   const setLang = useCallback((next: Lang) => setLangState(next), [])

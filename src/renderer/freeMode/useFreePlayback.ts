@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../audio/AudioEngine'
-import type { FreeSnapshot, RecordedNote } from './types'
+import type { FreeSnapshot } from './types'
 
 interface Args {
   snapshot: FreeSnapshot

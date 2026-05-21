@@ -1,16 +1,13 @@
-// ─── Per-song leaderboard modal ─────────────────────────────────────────────
-// Two-level filter so the user can compare like-with-like:
-//   • Outer tabs   — Total · Melody · Rhythm · Melody+Rhythm
-//   • Inner pills  — All · Right · Left · Both    (hidden on the Total tab)
-//
-// Clearing scores from the "Clear" button clears only the CURRENT view's
-// scores so the user can wipe a single run-mode without nuking everything.
-
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { TranslationKey } from '../../i18n/translations'
 import { getScores, clearScores, addScore, type ScoreEntry } from '../../practice/leaderboard'
 import type { PracticeMode } from '../../types'
+import {
+  parseMode, handLabelKey, skillLabelKey, modeLabel,
+  type Skill, type HandFilter,
+} from '../../practice/mode'
+import { formatShortDate, formatTimeSec } from '../../utils/format'
 
 interface Props {
   songName: string
@@ -32,50 +29,6 @@ const MODAL_STYLE = `
 .lbRow      { animation: lbRowIn 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 `
 
-function fmtDate(ms: number): string {
-  try {
-    return new Date(ms).toLocaleDateString(undefined, {
-      year: '2-digit', month: 'short', day: '2-digit',
-    })
-  } catch { return '—' }
-}
-
-function fmtTime(sec: number): string {
-  const s = Math.max(0, Math.round(sec))
-  const m = Math.floor(s / 60)
-  return `${m}:${(s % 60).toString().padStart(2, '0')}`
-}
-
-// ─── Mode parsing ────────────────────────────────────────────────────────────
-type Skill = 'melody' | 'rhythm' | 'melody-rhythm'
-type Hand  = 'right' | 'left' | 'both'
-
-function parseMode(mode: PracticeMode): { hand: Hand | null; skill: Skill | null } {
-  if (mode === 'view-listen') return { hand: null, skill: null }
-  // mode shape: `${hand}-${skill}` where skill can itself contain a dash
-  const m = mode as string
-  const dash = m.indexOf('-')
-  if (dash < 0) return { hand: null, skill: null }
-  const hand  = m.slice(0, dash) as Hand
-  const skill = m.slice(dash + 1) as Skill
-  return { hand, skill }
-}
-
-function handLabelKey(h: Hand): TranslationKey {
-  return h === 'left' ? 'leftHand' : h === 'right' ? 'rightHand' : 'bothHands'
-}
-function skillLabelKey(s: Skill): TranslationKey {
-  return s === 'melody' ? 'melody' : s === 'rhythm' ? 'rhythm' : 'melodyRhythm'
-}
-
-function modeLabel(mode: PracticeMode, t: (k: TranslationKey) => string): string {
-  if (mode === 'view-listen') return t('viewListenShort')
-  const { hand, skill } = parseMode(mode)
-  if (!hand || !skill) return mode
-  return `${t(handLabelKey(hand))} · ${t(skillLabelKey(skill))}`
-}
-
-// ─── Tab definitions ─────────────────────────────────────────────────────────
 type SkillTab = 'total' | Skill
 const SKILL_TABS: { id: SkillTab; key: TranslationKey }[] = [
   { id: 'total',         key: 'lbTabTotal'  },
@@ -84,7 +37,7 @@ const SKILL_TABS: { id: SkillTab; key: TranslationKey }[] = [
   { id: 'melody-rhythm', key: 'melodyRhythm' },
 ]
 
-type HandTab = 'all' | Hand
+type HandTab = 'all' | HandFilter
 const HAND_TABS: { id: HandTab; key: TranslationKey }[] = [
   { id: 'all',   key: 'lbHandAll' },
   { id: 'right', key: 'rightHand' },
@@ -92,7 +45,6 @@ const HAND_TABS: { id: HandTab; key: TranslationKey }[] = [
   { id: 'both',  key: 'bothHands' },
 ]
 
-// Filter a flat score list down to the active (skill, hand) view.
 function filterScores(all: ScoreEntry[], skill: SkillTab, hand: HandTab): ScoreEntry[] {
   return all.filter((s) => {
     const p = parseMode(s.mode)
@@ -100,6 +52,11 @@ function filterScores(all: ScoreEntry[], skill: SkillTab, hand: HandTab): ScoreE
     if (skill !== 'total' && hand !== 'all' && p.hand !== hand) return false
     return true
   })
+}
+
+function rowModeLabel(mode: PracticeMode, t: (k: TranslationKey) => string): string {
+  if (mode === 'view-listen') return t('viewListenShort')
+  return modeLabel(mode, t)
 }
 
 export default function LeaderboardModal({ songName, onClose }: Props): React.JSX.Element {
@@ -110,14 +67,11 @@ export default function LeaderboardModal({ songName, onClose }: Props): React.JS
   const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  // Reset hand sub-filter whenever the outer tab changes so the user doesn't
-  // get caught with "I picked Left under Melody but switched to Rhythm where
-  // no Left runs exist" — the inner filter starts at 'all' for each skill.
   useEffect(() => { setHandTab('all') }, [skillTab])
 
   const visible = useMemo(
@@ -130,9 +84,7 @@ export default function LeaderboardModal({ songName, onClose }: Props): React.JS
   const best = visible[0] ?? null
   const rows = useMemo(() => visible.slice(0, 20), [visible])
 
-  // Clear button wipes only the active filter's runs — keeps the user from
-  // accidentally nuking unrelated scores when they wanted to reset just one mode.
-  const handleClear = () => {
+  const handleClear = (): void => {
     if (skillTab === 'total' && handTab === 'all') {
       clearScores(songName)
       setAllScores([])
@@ -162,7 +114,6 @@ export default function LeaderboardModal({ songName, onClose }: Props): React.JS
         onClick={(e) => e.stopPropagation()}
         className="lbCard w-full max-w-2xl rounded-3xl bg-white border border-slate-200 dark:bg-slate-900 dark:border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
       >
-        {/* Header */}
         <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 flex items-center justify-center shrink-0 text-xl">
             🏆
@@ -187,7 +138,6 @@ export default function LeaderboardModal({ songName, onClose }: Props): React.JS
           )}
         </div>
 
-        {/* Outer tabs: skill */}
         <div className="px-3 pt-2 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center gap-1">
           {SKILL_TABS.map((tab) => {
             const on = tab.id === skillTab
@@ -211,7 +161,6 @@ export default function LeaderboardModal({ songName, onClose }: Props): React.JS
           })}
         </div>
 
-        {/* Inner pills: hand (only on skill tabs) */}
         {skillTab !== 'total' && (
           <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center gap-1.5">
             {HAND_TABS.map((tab) => {
@@ -234,7 +183,6 @@ export default function LeaderboardModal({ songName, onClose }: Props): React.JS
           </div>
         )}
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto">
           {rows.length === 0 ? (
             <div className="p-10 text-center text-slate-500 dark:text-slate-400 text-sm">
@@ -279,19 +227,19 @@ export default function LeaderboardModal({ songName, onClose }: Props): React.JS
                       </td>
                       <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400 hidden sm:table-cell">
                         <div className="flex items-center gap-1.5">
-                          <span>{modeLabel(s.mode, t)}</span>
+                          <span>{rowModeLabel(s.mode, t)}</span>
                           {s.loopRegion && (
                             <span
-                              title={`Loop ${fmtTime(s.loopRegion.startSec)} – ${fmtTime(s.loopRegion.endSec)}`}
+                              title={`Loop ${formatTimeSec(s.loopRegion.startSec)} – ${formatTimeSec(s.loopRegion.endSec)}`}
                               className="px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 text-[10px] font-mono font-semibold whitespace-nowrap"
                             >
-                              ↻ {fmtTime(s.loopRegion.startSec)}–{fmtTime(s.loopRegion.endSec)}
+                              ↻ {formatTimeSec(s.loopRegion.startSec)}–{formatTimeSec(s.loopRegion.endSec)}
                             </span>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-2 text-right text-xs text-slate-500 dark:text-slate-400 hidden sm:table-cell">
-                        {fmtDate(s.date)}
+                        {formatShortDate(s.date)}
                       </td>
                     </tr>
                   )
@@ -301,17 +249,12 @@ export default function LeaderboardModal({ songName, onClose }: Props): React.JS
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-700 flex items-center gap-2">
           {visible.length > 0 && (
             confirming ? (
               <>
                 <span className="text-xs text-slate-500 dark:text-slate-400 mr-auto">
                   {(() => {
-                    // On Total/All we wipe everything for the song — use the
-                    // wider warning.  On any sub-filter, show the precise scope
-                    // ("Melody", "Right · Rhythm", etc.) so the user knows
-                    // exactly which slice they're deleting.
                     if (skillTab === 'total' && handTab === 'all') {
                       return t('clearLeaderboardConfirm')
                     }

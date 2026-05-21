@@ -1,40 +1,16 @@
-// ─── Practice-header leaderboard popover ────────────────────────────────────
-// Trophy button that pops a small panel showing:
-//   • Challenge mode toggle at the top
-//   • Scoreboard for the CURRENT (song, mode) — scrollable when long
-//   • If challenge is off, just a hint, no table
-//
-// Compact by design — the full multi-mode browser lives in the ModePage's
-// LeaderboardModal.  Here we focus on what the user is practising right now.
-
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ToggleSwitch from './ToggleSwitch'
 import { DROPDOWN_CSS } from './modeGroups'
 import { useLanguage } from '../../i18n/LanguageContext'
-import type { TranslationKey } from '../../i18n/translations'
 import { getScores, type ScoreEntry } from '../../practice/leaderboard'
 import type { PracticeMode } from '../../types'
-
-function fmtDate(ms: number): string {
-  try {
-    return new Date(ms).toLocaleDateString(undefined, {
-      year: '2-digit', month: 'short', day: '2-digit',
-    })
-  } catch { return '—' }
-}
-function fmtTime(sec: number): string {
-  const s = Math.max(0, Math.round(sec))
-  const m = Math.floor(s / 60)
-  return `${m}:${(s % 60).toString().padStart(2, '0')}`
-}
+import { formatShortDate, formatTimeSec } from '../../utils/format'
 
 interface Props {
   songName:         string
   mode:             PracticeMode
   challengeEnabled: boolean
   onChallengeToggle: () => void
-  /** Bump this number whenever a new score lands so the popover refetches
-   *  next time it opens (covers in-practice loop saves). */
   scoreVersion?:    number
 }
 
@@ -54,16 +30,14 @@ export default function LeaderboardPopover({
   const [scores, setScores] = useState<ScoreEntry[]>([])
   const ref = useRef<HTMLDivElement>(null)
 
-  // Refetch on open and whenever a new score is recorded externally.
   useEffect(() => {
     if (!open) return
     setScores(getScores(songName))
   }, [open, songName, scoreVersion])
 
-  // Click-outside to close.
   useEffect(() => {
     if (!open) return
-    const onClick = (e: MouseEvent) => {
+    const onClick = (e: MouseEvent): void => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', onClick)
@@ -113,7 +87,6 @@ export default function LeaderboardPopover({
             )}
           </div>
 
-          {/* Challenge toggle row */}
           <div className="hdr-dd-item px-4 py-2.5 flex items-center justify-between" style={{ animationDelay: '30ms' }}>
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="text-amber-500 dark:text-amber-300 text-base leading-none" aria-hidden>🏆</span>
@@ -124,7 +97,6 @@ export default function LeaderboardPopover({
 
           <div className="mx-4 border-t border-slate-200 dark:border-slate-700/50" />
 
-          {/* Scoreboard — only when challenge is on. */}
           {!challengeEnabled ? (
             <div className="px-4 py-5 text-center text-xs text-slate-500 dark:text-slate-400">
               {t('challengeOff')}
@@ -135,8 +107,6 @@ export default function LeaderboardPopover({
               {t('noScoresYet')}
             </div>
           ) : (
-            // Scroll if many — caps at 320px so a long history doesn't
-            // push the popover past the screen.
             <div className="max-h-[320px] overflow-y-auto">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -167,7 +137,7 @@ export default function LeaderboardPopover({
                           {Math.round(s.score)}
                           {s.loopRegion && (
                             <span
-                              title={`Loop ${fmtTime(s.loopRegion.startSec)} – ${fmtTime(s.loopRegion.endSec)}`}
+                              title={`Loop ${formatTimeSec(s.loopRegion.startSec)} – ${formatTimeSec(s.loopRegion.endSec)}`}
                               className="ml-1 text-blue-500 dark:text-blue-300"
                               aria-hidden
                             >↻</span>
@@ -180,7 +150,7 @@ export default function LeaderboardPopover({
                           {s.maxCombo}
                         </td>
                         <td className="px-3 py-1.5 text-right text-slate-500 dark:text-slate-400">
-                          {fmtDate(s.date)}
+                          {formatShortDate(s.date)}
                         </td>
                       </tr>
                     )
@@ -194,7 +164,3 @@ export default function LeaderboardPopover({
     </div>
   )
 }
-
-// Re-export for callers that want the label key for some reason — keeps the
-// barrel-free style we use elsewhere in components/header.
-export type { TranslationKey }

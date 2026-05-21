@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAppContext, modePrefsKey, LS_RESUME_POINTS } from '../context/AppContext'
+import { useAppContext, modePrefsKey } from '../context/AppContext'
+import { LS } from '../constants/storageKeys'
+import { loadJSON, isPlainObject } from '../utils/storage'
 import { audioEngine }          from '../audio/AudioEngine'
 import { useAudioEngine }       from '../hooks/useAudioEngine'
 import { useAudioScheduler }    from '../practice/useAudioScheduler'
@@ -27,7 +29,7 @@ import ProgressBar    from '../components/ProgressBar'
 import PracticeHeader from '../components/header/PracticeHeader'
 import { PlayIcon } from '../components/header/icons'
 import type { MidiNote, LoopRegion, Hand, PracticeMode } from '../types'
-import { getActiveHands, requiresMelody } from '../utils/midiUtils'
+import { getActiveHands, requiresMelody } from '../practice/mode'
 import { KEY_COUNTS, detectKeyCountFromName, type KeyCount } from '../utils/noteUtils'
 import { useMidi } from '../context/MidiContext'
 
@@ -552,14 +554,10 @@ export default function PracticePage(): React.JSX.Element {
   // using the same key AppContext owns.
   useEffect(() => {
     if (!midiFile) return
-    const flush = () => {
-      try {
-        const raw = localStorage.getItem(LS_RESUME_POINTS)
-        const prev = raw ? JSON.parse(raw) : {}
-        const next = { ...(prev && typeof prev === 'object' ? prev : {}),
-                       [midiFile.name]: { time: currentTimeRef.current, mode } }
-        localStorage.setItem(LS_RESUME_POINTS, JSON.stringify(next))
-      } catch { /* quota / parse */ }
+    const flush = (): void => {
+      const prev = loadJSON<Record<string, unknown>>(LS.RESUME_POINTS, {}, isPlainObject)
+      const next = { ...prev, [midiFile.name]: { time: currentTimeRef.current, mode } }
+      try { localStorage.setItem(LS.RESUME_POINTS, JSON.stringify(next)) } catch { /* quota */ }
     }
     window.addEventListener('beforeunload', flush)
     window.addEventListener('pagehide',     flush)

@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react'
 import type { LoopRegion } from '../types'
+import { formatTimeSec } from '../utils/format'
 
 interface ProgressBarProps {
   duration: number
@@ -25,12 +26,6 @@ const ANIM_CSS = `
   .pb-track     { transition: height 0.18s cubic-bezier(0.4,0,0.2,1); }
   .pb-head      { transition: transform 0.18s cubic-bezier(0.4,0,0.2,1), box-shadow 0.18s ease-out; }
 `
-
-function formatTime(s: number): string {
-  const m   = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
 
 export default function ProgressBar({
   duration, currentTime, loopRegion, onSeek, onLoopChange
@@ -121,7 +116,7 @@ export default function ProgressBar({
       >
         {/* Elapsed time */}
         <span className="text-[13px] font-mono font-semibold text-slate-800 dark:text-slate-50 tabular-nums w-14 text-right shrink-0 tracking-tight">
-          {formatTime(currentTime)}
+          {formatTimeSec(currentTime)}
         </span>
 
         {/* ── Track ─────────────────────────────────────────────────────── */}
@@ -236,7 +231,7 @@ export default function ProgressBar({
               style={{ left: `${hoverFrac * 100}%`, bottom: 'calc(100% + 6px)', transform: 'translateX(-50%)' }}
             >
               <div className="relative px-2 py-1 rounded-md bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[11px] font-mono font-semibold tabular-nums shadow-xl whitespace-nowrap">
-                {formatTime(hoverFrac * duration)}
+                {formatTimeSec(hoverFrac * duration)}
                 <div
                   className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0"
                   style={{
@@ -258,8 +253,8 @@ export default function ProgressBar({
           title={showRemaining ? 'Show total time' : 'Show remaining time'}
         >
           {showRemaining
-            ? `-${formatTime(Math.max(0, duration - currentTime))}`
-            : formatTime(duration)}
+            ? `-${formatTimeSec(Math.max(0, duration - currentTime))}`
+            : formatTimeSec(duration)}
         </button>
       </div>
     </>

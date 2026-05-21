@@ -62,7 +62,7 @@ interface FallingNotesProps {
 }
 
 export default function FallingNotes({
-  notes, currentTime, keyboardHeight, practiceMode = false,
+  notes, currentTime, keyboardHeight: _keyboardHeight, practiceMode = false,
   zoom = 1, showLaneLines = true, keyCount = 88,
   onCanvasReady
 }: FallingNotesProps): React.JSX.Element {

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -12,15 +12,10 @@ import {
 import LeaderboardModal from '../components/library/LeaderboardModal'
 import { getBestScore } from '../practice/leaderboard'
 import { useChallengeEnabled } from '../practice/useChallengeEnabled'
+import { parseMode, type Skill, type HandFilter as Hand } from '../practice/mode'
+import { formatTimeSec } from '../utils/format'
 
 type IconCmp = React.FC<{ className?: string }>
-
-// ─── Hand themes ──────────────────────────────────────────────────────────────
-// Colours mirror the practice page (treble = blue, bass = orange, both = green)
-// so picking a mode here has visual continuity with the keyboard / falling-notes
-// view that opens next.
-type Hand  = 'right' | 'left' | 'both'
-type Skill = 'melody' | 'rhythm' | 'melody-rhythm'
 
 interface HandTheme {
   labelKey:   TranslationKey
@@ -87,21 +82,12 @@ const SKILLS: SkillInfo[] = [
 
 const HANDS: Hand[] = ['right', 'left', 'both']
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatTime(s: number): string {
-  const m   = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
-
 function modeLabel(mode: PracticeMode, t: (k: TranslationKey) => string): string {
   if (mode === 'view-listen') return t('viewAndListen')
-  const parts = mode.split('-')
-  const hand  = parts[0] as Hand
-  const skill = parts.slice(1).join('-')
-  const handLabel  = HAND_THEMES[hand] ? t(HAND_THEMES[hand].labelKey) : hand
-  const skillInfo  = SKILLS.find(s => s.key === skill)
-  const skillLabel = skillInfo ? t(skillInfo.labelKey) : skill
+  const { hand, skill } = parseMode(mode)
+  const handLabel  = hand && HAND_THEMES[hand] ? t(HAND_THEMES[hand].labelKey) : hand ?? ''
+  const skillInfo  = skill ? SKILLS.find(s => s.key === skill) : undefined
+  const skillLabel = skillInfo ? t(skillInfo.labelKey) : skill ?? ''
   return `${handLabel} — ${skillLabel}`
 }
 
@@ -111,30 +97,30 @@ export default function ModePage(): React.JSX.Element {
   const { midiFile, setPracticeSettings, resumePoints, setResumePoint } = useAppContext()
   const { t } = useLanguage()
 
-  if (!midiFile) {
-    navigate('/')
-    return <></>
-  }
-
-  // Resume bookmark is scoped per-song so each MIDI keeps its own mark.
-  const resumePoint = resumePoints[midiFile.name] ?? null
+  const songName = midiFile?.name ?? null
+  const resumePoint = midiFile ? resumePoints[midiFile.name] ?? null : null
 
   const [showLeaderboard, setShowLeaderboard] = useState(false)
-  // Recompute when the modal closes so a fresh result reflects immediately.
   const bestScore = useMemo(
-    () => getBestScore(midiFile.name),
-    [midiFile.name, showLeaderboard]
+    () => (songName ? getBestScore(songName) : null),
+    [songName]
   )
 
-  const [challengeEnabled, setChallengeEnabled] = useChallengeEnabled(midiFile.name)
+  const [challengeEnabled, setChallengeEnabled] = useChallengeEnabled(songName)
 
-  const startFresh = (mode: PracticeMode) => {
+  useEffect(() => {
+    if (!midiFile) navigate('/')
+  }, [midiFile, navigate])
+
+  if (!midiFile) return <></>
+
+  const startFresh = (mode: PracticeMode): void => {
     setResumePoint(midiFile.name, null)
     setPracticeSettings({ mode, midiFile })
     navigate('/practice')
   }
 
-  const continueSession = () => {
+  const continueSession = (): void => {
     if (!resumePoint) return
     setPracticeSettings({ mode: resumePoint.mode, midiFile })
     navigate('/practice')
@@ -236,7 +222,7 @@ export default function ModePage(): React.JSX.Element {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-slate-900 dark:text-white font-semibold text-sm">
-                  {t('continueFromLabel')}<span className="text-blue-600 dark:text-blue-300 font-mono tabular-nums">{formatTime(resumePoint.time)}</span>
+                  {t('continueFromLabel')}<span className="text-blue-600 dark:text-blue-300 font-mono tabular-nums">{formatTimeSec(resumePoint.time)}</span>
                 </p>
                 <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5 truncate">
                   {modeLabel(resumePoint.mode, t)}

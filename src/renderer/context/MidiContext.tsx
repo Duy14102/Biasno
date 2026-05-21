@@ -19,11 +19,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { MidiDevice } from '../types'
 import { useLanguage } from '../i18n/LanguageContext'
+import { LS } from '../constants/storageKeys'
+import { loadJSON, saveJSON } from '../utils/storage'
 
-const LS_KNOWN          = 'biasno.midi.knownDevices'
-// Artificial minimum spinner duration so users see clear feedback even though
-// Web MIDI open() resolves almost instantly.
-const MIN_CONNECT_MS    = 350
+const MIN_CONNECT_MS = 350
 
 export type MidiNoteCallback = (midi: number, velocity: number, on: boolean) => void
 
@@ -57,22 +56,13 @@ interface MidiContextValue {
 const MidiContext = createContext<MidiContextValue | null>(null)
 
 function loadKnown(): KnownDevice[] {
-  try {
-    const raw = localStorage.getItem(LS_KNOWN)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((x: unknown): x is KnownDevice =>
-      typeof x === 'object' && x !== null &&
-      typeof (x as KnownDevice).id === 'string' &&
-      typeof (x as KnownDevice).name === 'string' &&
-      typeof (x as KnownDevice).lastConnectedAt === 'number',
-    )
-  } catch { return [] }
-}
-
-function saveKnown(list: KnownDevice[]): void {
-  try { localStorage.setItem(LS_KNOWN, JSON.stringify(list)) } catch { /* quota */ }
+  const parsed = loadJSON<unknown[]>(LS.MIDI_KNOWN, [], Array.isArray)
+  return parsed.filter((x: unknown): x is KnownDevice =>
+    typeof x === 'object' && x !== null &&
+    typeof (x as KnownDevice).id === 'string' &&
+    typeof (x as KnownDevice).name === 'string' &&
+    typeof (x as KnownDevice).lastConnectedAt === 'number',
+  )
 }
 
 export function MidiProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
@@ -99,7 +89,7 @@ export function MidiProvider({ children }: { children: React.ReactNode }): React
   const tFn              = useRef(t)
 
   useEffect(() => { tFn.current = t }, [t])
-  useEffect(() => { knownRef.current = known; saveKnown(known) }, [known])
+  useEffect(() => { knownRef.current = known; saveJSON(LS.MIDI_KNOWN, known) }, [known])
   useEffect(() => { liveRef.current = liveDevices }, [liveDevices])
   useEffect(() => { connectedIdRef.current = connectedId }, [connectedId])
   useEffect(() => { connectingRef.current = connecting }, [connecting])

@@ -98,7 +98,7 @@ export default function PianoKeyboard({
   const { whiteKeys, blackKeys } = useMemo(() => {
     const whites: number[] = [], blacks: number[] = []
     for (let m = range.min; m <= range.max; m++) {
-      isBlackKey(m) ? blacks.push(m) : whites.push(m)
+      if (isBlackKey(m)) blacks.push(m); else whites.push(m)
     }
     return { whiteKeys: whites, blackKeys: blacks }
   }, [range.min, range.max])

@@ -152,7 +152,7 @@ export function useTransport({
 
   // ─── Header transport buttons ─────────────────────────────────────────────
   const handlePlayPause = useCallback(() => {
-    isPlayingRef.current ? pause() : play()
+    if (isPlayingRef.current) pause(); else play()
   }, [isPlayingRef, play, pause])
 
   /** Restart from the leadIn runway, not raw 0 — same "ready" pause as a

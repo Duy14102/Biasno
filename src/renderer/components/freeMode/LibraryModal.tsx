@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { LibraryEntry } from '../../freeMode/library'
 import { CloseIcon, TrashIcon, FolderMusicIcon, LibraryIcon, MicIcon } from './icons'
+import { formatTimeMs, formatDateTime } from '../../utils/format'
 
 interface Props {
   entries:    LibraryEntry[]
@@ -28,17 +29,6 @@ const LIB_STYLES = `
 .lib-backdrop { animation: lib-backdrop-in 160ms ease-out both; }
 .lib-row      { animation: lib-row-in 220ms ease-out both; }
 `
-
-function fmtDur(ms: number): string {
-  const total = Math.max(0, ms) / 1000
-  const m = Math.floor(total / 60)
-  const s = Math.round(total - m * 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-function fmtDate(ts: number): string {
-  return new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
 
 export default function LibraryModal({
   entries, activeId, onClose, onLoad, onDelete,
@@ -184,11 +174,11 @@ function EntryRow({
         <p className="text-xs text-slate-500 dark:text-slate-400 truncate tabular-nums">
           {entry.author && <span className="text-slate-600 dark:text-slate-300">{entry.author}</span>}
           {entry.author && <span> · </span>}
-          <span className="font-mono">{fmtDur(entry.durationMs)}</span>
+          <span className="font-mono">{formatTimeMs(entry.durationMs)}</span>
           <span> · </span>
           <span>{entry.notes.length} {t('freeNotes').toLowerCase()}</span>
           <span> · </span>
-          <span>{fmtDate(entry.updatedAt)}</span>
+          <span>{formatDateTime(entry.updatedAt)}</span>
         </p>
       </div>
 

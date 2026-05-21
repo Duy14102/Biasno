@@ -26,6 +26,8 @@ npm install
 npm run dev         # hot-reload dev
 npm run build       # bundle main + preload + renderer into ./out
 npm run start       # run the built bundle without packaging
+npm run lint        # ESLint over src/
+npm run test        # Vitest (unit tests for utils + practice/mode)
 npm run package     # Windows portable build into ./release/win-unpacked
 ```
 
@@ -146,23 +148,28 @@ src/
 ├── preload/          contextBridge — window.electronAPI.
 └── renderer/         React app.
     ├── audio/        AudioEngine — sample loading, scheduling, metronome.
+    ├── constants/    storageKeys — single source of truth for all biasno.* LS keys.
     ├── context/      AppContext (files, settings, prefs), MidiContext (Web MIDI),
     │                 ThemeContext (dark / light).
+    ├── hooks/        Cross-feature hooks (useAudioEngine, useEscape).
     ├── i18n/         LanguageContext + per-language dictionaries in locales/.
     ├── types/        Shared types split per domain (midi, practice, visual, device).
-    ├── utils/        midiUtils, noteUtils.
+    ├── utils/        midiUtils (parse), noteUtils (key geometry),
+    │                 format (m:ss / dates), storage (loadJSON / saveJSON).
     ├── pages/        HomePage · ModePage · PracticePage · FreeModePage.
     ├── practice/     PracticePage's engine + scoring.
     │                 ├ Playback: usePlayhead, useTransport, useModeChange,
     │                 │           useAudioScheduler, usePracticeInput,
     │                 │           useFlashTimer, useViewSwap.
-    │                 └ Scoring:  useScoring, useChallengeEnabled, leaderboard.
+    │                 ├ Scoring:  useScoring, useChallengeEnabled, leaderboard.
+    │                 └ Mode:     mode (parseMode, modeLabel, hand/skill helpers).
     ├── freeMode/     FreeModePage's hooks + helpers:
     │                 useRecorder (capture + trim undo/redo),
     │                 useFreePlayback (seek + speed + tail-cut playback),
     │                 freeModeExport (MIDI / MusicXML / PDF builders),
     │                 library (localStorage CRUD), types.
     └── components/
+        ├── common/   ConfirmModal scaffold + shared icons used across folders.
         ├── sheet/    SheetMusic + helpers (highlighting, refs, scroll, preload).
         ├── falling/  FallingNotes canvas.
         ├── keyboard/ PianoKeyboard.
@@ -171,7 +178,7 @@ src/
         │             ToggleSwitch + shared dropdown CSS.
         ├── library/  HomePage sub-components + useFileLibrary hook:
         │             FileRow, DevicePanel, MidiDevicePicker,
-        │             DeleteConfirmModal, LeaderboardModal.
+        │             DeleteConfirmModal, FolderConflictModal, LeaderboardModal.
         └── freeMode/ FreeModeHeader, RecorderPanel, TrimRange (waveform +
                       dual-thumb), ExportMenu, SpeedControl, LibraryModal,
                       ClearConfirmModal, icons.

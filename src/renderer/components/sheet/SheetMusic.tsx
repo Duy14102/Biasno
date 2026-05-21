@@ -202,6 +202,7 @@ function SheetMusic({
       if (cached?.extras) cached.extras.lastStepIdx = stepIdxRef.current
       // Clear inline fill/stroke BEFORE detaching: cached container survives
       // in body across toggles, so styles left here would resurrect on attach.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       clearHighlights(prevHighRef.current)
       prevHighKeyRef.current = ''
       // Move the cached container back to body BEFORE React unmounts our

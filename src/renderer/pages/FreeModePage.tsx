@@ -4,7 +4,7 @@ import { useAudioEngine } from '@/hooks'
 import { useLanguage } from '@/i18n'
 import { useMidi } from '@/context'
 import { audioEngine } from '@/audio'
-import { useRecorder } from '@/freeMode'
+import { useFreeMode } from '@/freeMode'
 import { useFreePlayback } from '@/freeMode'
 import { buildMidi, buildMusicXml, buildSheetHtml } from '@/freeMode'
 import {
@@ -14,6 +14,7 @@ import {
 import { FreeModeHeader } from '@/components/freeMode'
 import { RecorderPanel }  from '@/components/freeMode'
 import { LibraryModal }   from '@/components/freeMode'
+import { ClearConfirmModal } from '@/components/freeMode'
 import { PianoKeyboard }  from '@/components/keyboard'
 import { KEY_COUNTS, detectKeyCountFromName, type KeyCount } from '@/utils'
 import { KEYBOARD_HEIGHT } from '@/practice'
@@ -75,6 +76,7 @@ export default function FreeModePage(): React.JSX.Element {
         durationMs: snap.durationMs,
         trimStartMs: snap.trimStartMs,
         trimEndMs:   snap.trimEndMs,
+        clips:       snap.clips,
       })
       refreshEntries()
       return
@@ -86,6 +88,7 @@ export default function FreeModePage(): React.JSX.Element {
       durationMs: snap.durationMs,
       trimStartMs: snap.trimStartMs,
       trimEndMs:   snap.trimEndMs,
+      clips:       snap.clips,
     })
     setActiveId(entry.id)
     refreshEntries()
@@ -97,12 +100,38 @@ export default function FreeModePage(): React.JSX.Element {
     setActiveId(null)
   }, [])
 
-  const recorder = useRecorder({ onAfterStop: handleAfterStop, onAfterClear: handleAfterClear })
+  const freeMode = useFreeMode({ onAfterStop: handleAfterStop, onAfterClear: handleAfterClear })
   const {
     isRecording, snapshot, canUndo, canRedo,
     startRecord, continueRecord, stopRecord, clear, playInput,
     setTrimStart, setTrimEnd, undo, redo, replaceSnapshot,
-  } = recorder
+    splitClipAt, deleteClipAt, setClipVolumeAt, toggleLockAt,
+    setClipCommentAt, copyClipAt, pasteClipAt, cloneClipAt, moveClipTo, clipboard,
+  } = freeMode
+
+  // When the bar has no splits (clips.length ≤ 1, including the implicit
+  // default), a Delete from the context menu means "wipe the whole
+  // recording" — same as the trash button outside the bar.  Confirm via a
+  // modal before calling clear(); otherwise just remove that one clip.
+  const [pendingWholeDelete, setPendingWholeDelete] = useState(false)
+  const handleClipDelete = useCallback((atMs: number) => {
+    if (snapshot.clips.length <= 1) {
+      setPendingWholeDelete(true)
+    } else {
+      deleteClipAt(atMs)
+    }
+  }, [snapshot.clips.length, deleteClipAt])
+
+  const clipActions = useMemo(() => ({
+    onSplit:      splitClipAt,
+    onCopy:       copyClipAt,
+    onPaste:      pasteClipAt,
+    onDelete:     handleClipDelete,
+    onSetComment: setClipCommentAt,
+    onSetVolume:  setClipVolumeAt,
+    onToggleLock: toggleLockAt,
+    onClone:      cloneClipAt,
+  }), [splitClipAt, copyClipAt, pasteClipAt, handleClipDelete, setClipCommentAt, setClipVolumeAt, toggleLockAt, cloneClipAt])
 
   // ─── Live-update library entry on field / trim changes ─────────────
   // Skips the very first render after a load — that's how we avoid
@@ -117,6 +146,7 @@ export default function FreeModePage(): React.JSX.Element {
       durationMs: snapshot.durationMs,
       trimStartMs: snapshot.trimStartMs,
       trimEndMs:   snapshot.trimEndMs,
+      clips:       snapshot.clips,
     })
     refreshEntries()
   }, [activeId, fileName, author, snapshot, refreshEntries])
@@ -217,6 +247,7 @@ export default function FreeModePage(): React.JSX.Element {
       durationMs: entry.durationMs,
       trimStartMs: entry.trimStartMs,
       trimEndMs:   entry.trimEndMs,
+      clips:       entry.clips ?? [],
     })
     setFileName(entry.name)
     setAuthor(entry.author)
@@ -332,6 +363,10 @@ export default function FreeModePage(): React.JSX.Element {
         onExportPdf={onExportPdf}
         liveRecordMs={liveRecordMs}
         busyExport={busyExport}
+        hasClipboard={clipboard !== null}
+        clipActions={clipActions}
+        onMoveClip={moveClipTo}
+        sessionKey={activeId ?? 'draft'}
       />
 
       <div className="relative h-0 pointer-events-none select-none z-10">
@@ -370,6 +405,14 @@ export default function FreeModePage(): React.JSX.Element {
           onClose={() => setLibraryOpen(false)}
           onLoad={handleLoad}
           onDelete={handleDelete}
+        />
+      )}
+
+      {pendingWholeDelete && (
+        <ClearConfirmModal
+          name={fileName}
+          onCancel={() => setPendingWholeDelete(false)}
+          onConfirm={() => { setPendingWholeDelete(false); clear() }}
         />
       )}
     </div>

@@ -8,21 +8,46 @@
 import { Midi } from '@tonejs/midi'
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 import type { FreeSnapshot, RecordedNote } from './types'
+import { chunkEndAt, effectiveClips } from './clipOps'
 import { midiToMusicXml } from '@/components/sheet'
 import type { MidiNote, Hand } from '@/types'
 
 const DEFAULT_BPM = 120
 
+// Pull only the notes that fall inside at least one clip (and inside the
+// outer trim window).  Each kept note is shifted so the export starts at
+// t=0 and its velocity is scaled by the containing clip's volume — exactly
+// what playback does, so the exported MIDI sounds like preview.
 function trimmedNotes(s: FreeSnapshot): { rel: RecordedNote[]; durMs: number } {
-  const filtered = s.notes
-    .filter(n => n.endMs > s.trimStartMs && n.startMs < s.trimEndMs)
-    .map<RecordedNote>(n => ({
+  const clips = effectiveClips(s)
+  const rel: RecordedNote[] = []
+  // Right-wins at touching boundaries — see clipOps.ts/findClipAt rationale.
+  const findOwner = (ms: number) => {
+    for (let i = clips.length - 1; i >= 0; i--) {
+      const c = clips[i]
+      if (ms >= c.startMs && ms <= c.endMs) return c
+    }
+    return undefined
+  }
+  for (const n of s.notes) {
+    if (n.endMs <= s.trimStartMs || n.startMs >= s.trimEndMs) continue
+    const owner = findOwner(n.startMs)
+    if (!owner) continue
+    // Extend through touching clips — same rule peaks/playback use, so
+    // exported MIDI / MusicXML / PDF match what the user heard.
+    const chunkEnd = chunkEndAt(clips, n.startMs) ?? owner.endMs
+    const startMs = Math.max(0, n.startMs - s.trimStartMs)
+    const endMs   = Math.min(s.trimEndMs - s.trimStartMs, Math.min(n.endMs, chunkEnd) - s.trimStartMs)
+    if (endMs <= startMs) continue
+    rel.push({
       ...n,
-      startMs: Math.max(0, n.startMs - s.trimStartMs),
-      endMs:   Math.min(s.trimEndMs - s.trimStartMs, n.endMs - s.trimStartMs),
-    }))
+      startMs,
+      endMs,
+      velocity: Math.max(0, Math.min(1, n.velocity * owner.volume)),
+    })
+  }
   const durMs = Math.max(0, s.trimEndMs - s.trimStartMs)
-  return { rel: filtered, durMs }
+  return { rel, durMs }
 }
 
 // ─── MIDI ──────────────────────────────────────────────────────────────────

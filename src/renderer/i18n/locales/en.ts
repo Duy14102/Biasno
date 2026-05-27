@@ -26,7 +26,7 @@ export const en: Translations = {
   midiUnavailable:        'MIDI unavailable',
   noDeviceConnected:      'No piano connected',
   noWebMidiSupport:       'Browser does not support Web MIDI API',
-  connectUsbInstruction:  'Plug your piano via USB and try again — or use the computer keys below.',
+  connectUsbInstruction:  'Plug your piano via USB and try again',
   computerKeys:           'Computer keys',
   keyboardHelpTitle:      'Keyboard layout',
   keyboardHelpHint:       'No piano yet? Use your keyboard to play 34 notes (C3 – A5).',
@@ -243,5 +243,20 @@ export const en: Translations = {
   freeIdleHint:            'Press Record then start playing — every key you press is captured.',
   freeRecordingHint:       '● Recording — press Stop when done.',
   freeReadyHint:           'Name it, trim it, preview, then export.',
+
+  // ── Clip context menu (right-click on the trim bar) ─────────────────────
+  clipMenuSplit:           'Split',
+  clipMenuCopy:            'Copy',
+  clipMenuPaste:           'Paste',
+  clipMenuClone:           'Clone',
+  clipMenuDelete:          'Delete',
+  clipMenuComment:         'Comment…',
+  clipMenuCommentPlaceholder: 'Add a note for this clip',
+  clipMenuVolume:          'Volume',
+  clipMenuLock:            'Lock',
+  clipMenuUnlock:          'Unlock',
+  clipMenuSave:            'Save',
+  clipMenuClear:           'Clear',
+
   keys:                    'keys',
 }

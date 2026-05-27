@@ -122,3 +122,11 @@ export const PlusCircleIcon = (p: IconProps) => (
     <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
   </Svg>
 )
+
+// Speech / chat bubble with a tail at the bottom-left — used to badge a
+// clip that carries a comment on the trim bar.
+export const BubbleIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8.5l-4.5 4v-4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+  </Svg>
+)

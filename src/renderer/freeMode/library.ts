@@ -1,4 +1,4 @@
-import type { RecordedNote } from './types'
+import type { Clip, RecordedNote } from './types'
 import { LS } from '@/constants'
 import { loadJSON, saveJSON } from '@/utils'
 
@@ -12,6 +12,9 @@ export interface LibraryEntry {
   durationMs:  number
   trimStartMs: number
   trimEndMs:   number
+  // Persisted clip subdivisions.  Optional for back-compat with entries
+  // written before the multi-clip feature shipped.
+  clips?:      Clip[]
   createdAt:   number
   updatedAt:   number
 }

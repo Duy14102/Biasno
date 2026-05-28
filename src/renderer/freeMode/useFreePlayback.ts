@@ -93,8 +93,12 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
       }
       return null
     }
+    // Include notes that overlap [from, region.end), not just those that
+    // START past `from`.  A note whose onset is before the playhead but
+    // whose audible tail extends past it is still sounding — the user
+    // expects it to keep playing when they hit Play in the middle of it.
     const filterScheduled = (from: number) => snapshot.notes
-      .filter(n => n.startMs >= from && n.startMs < region.end)
+      .filter(n => n.startMs < region.end && (n.startMs >= from || n.endMs > from))
       .map(n => ({ note: n, clip: containingClip(n.startMs) }))
       .filter((p): p is { note: typeof snapshot.notes[number]; clip: Clip } => p.clip !== null)
 
@@ -107,6 +111,33 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
       setHeadMs(fromMs)
     }
     if (scheduled.length === 0) return
+
+    // Merge adjacent same-pitch notes into one audio event.  Two independent
+    // pastes of the same pitch can end up touching at a clip boundary (e.g.
+    // user copies clip X and clip Y, drags them adjacent — X's last note and
+    // Y's first note are both the same pitch and meet at the seam).  Without
+    // this merge, the engine releases the first note's tail and re-attacks
+    // the second, producing an audible "click" / re-articulation where A|B|C
+    // (a split recording) plays one continuous tone via chunkEndAt.
+    //
+    // Only merge when the two clips share the same volume — otherwise the
+    // user's per-clip volume change would be lost (the merged event plays at
+    // the first clip's volume across the whole chain).  Volume divergence
+    // means the user wants distinct dynamics, so a small re-attack click is
+    // the right trade-off.
+    const TOUCH_TOLERANCE_MS = 5
+    const merged: typeof scheduled = []
+    for (const item of scheduled) {
+      const last = merged[merged.length - 1]
+      if (last && last.note.midi === item.note.midi
+          && item.note.startMs - last.note.endMs <= TOUCH_TOLERANCE_MS
+          && last.clip.volume === item.clip.volume) {
+        last.note = { ...last.note, endMs: Math.max(last.note.endMs, item.note.endMs) }
+      } else {
+        merged.push({ note: item.note, clip: item.clip })
+      }
+    }
+    scheduled = merged
 
     // Defensive: another page (e.g. PracticePage) may have left the master
     // gain at 0 via stopAll().  Restore before scheduling so the very first
@@ -124,8 +155,12 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
       // clip — matches peaks.ts so split (touching) preserves audio.
       const chunkEnd  = chunkEndAt(clips, n.startMs) ?? c.endMs
       const noteEnd   = Math.min(n.endMs, chunkEnd, region.end)
-      const offsetSec = (n.startMs - fromMs) / 1000 / sp
-      const dur       = Math.max(0.05, (noteEnd - n.startMs) / 1000 / sp)
+      // Notes whose onset is before the playhead start playing from `fromMs`
+      // (we accept the lost attack envelope — better mid-sustain than silent).
+      const playStart = Math.max(n.startMs, fromMs)
+      if (noteEnd <= playStart) continue
+      const offsetSec = (playStart - fromMs) / 1000 / sp
+      const dur       = Math.max(0.05, (noteEnd - playStart) / 1000 / sp)
       const vel       = Math.max(0, Math.min(1, n.velocity * c.volume))
       // tail=0.05 (50 ms) keeps the note from clicking off but doesn't let
       // it ring far past its written end — so a "silent gap" stays silent.

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   effectiveClips, clipAt, chunkEndAt, makeClip, splitAt, deleteAt, setVolumeAt,
-  toggleLockAt, setCommentAt, pasteAt, cloneAt, moveToSlot,
+  toggleLockAt, setCommentAt, pasteAt, moveToSlot,
   setTrimStart, setTrimEnd, MIN_CLIP_MS,
 } from './clipOps'
 import type { Clip, FreeSnapshot, RecordedNote } from './types'
@@ -350,12 +350,10 @@ describe('splitAt', () => {
     expect(b.clips).toHaveLength(1)
     expect(b.clips[0].startMs).toBe(0)
     expect(b.clips[0].endMs).toBe(2500)
-    // Note still present, owns the surviving clip's range.  No continues
-    // flag — its onset is still in a surviving clip, natural attack stays.
+    // Note still present, owns the surviving clip's range.
     expect(b.notes).toHaveLength(1)
     expect(b.notes[0].id).toBe('held')
     expect(b.notes[0].startMs).toBe(0)
-    expect(b.notes[0].continues).toBeUndefined()
   })
 
   it('split a sustained note then delete LEFT half: right half keeps audio', () => {
@@ -366,14 +364,11 @@ describe('splitAt', () => {
     expect(b.clips).toHaveLength(1)
     expect(b.clips[0].startMs).toBe(0)           // ripple shifts right clip left
     expect(b.clips[0].endMs).toBe(2500)
-    // Note re-anchored to start where the surviving clip begins, marked
-    // as a continuation so the envelope picks up at sustain (no fake
-    // attack peak appearing where there wasn't one in the original).
+    // Note re-anchored to start where the surviving clip begins.
     expect(b.notes).toHaveLength(1)
     expect(b.notes[0].id).toBe('held')
     expect(b.notes[0].startMs).toBe(0)
     expect(b.notes[0].endMs).toBe(2500)
-    expect(b.notes[0].continues).toBe(true)
   })
 
   it('delete LEFT half preserves note id, midi, velocity', () => {
@@ -402,10 +397,10 @@ describe('splitAt', () => {
     const s = withClips(5000, [makeClip(0, 5000)], [n])
     const a = splitAt(s, 2500)
     const b = deleteAt(a, 1000)
-    expect(b.notes[0].continues).toBe(true)
+    expect(b.notes[0].startMs).toBe(0)
+    expect(b.notes[0].endMs).toBe(2500)
     // Original `n` reference is untouched by the deleteAt op.
     expect(s.notes[0]).toBe(n)
-    expect(s.notes[0].continues).toBeUndefined()
   })
 
   // ── Audible-window invariant (the REAL waveform check) ───────────────
@@ -460,9 +455,9 @@ describe('splitAt', () => {
     const a = splitAt(s, 2500)
     const b = deleteAt(a, 1000)                      // delete left
     const survivor = b.notes[0]
-    expect(survivor.continues).toBe(true)
     // Re-anchored: note now spans [0..2400] in post-ripple coords; chunk
     // covers the whole surviving clip [0..2500].
+    expect(survivor.startMs).toBe(0)
     expect(audibleEnd(b, survivor)).toBe(2400)
   })
 
@@ -611,7 +606,7 @@ describe('setCommentAt', () => {
   })
 })
 
-// ── pasteAt / cloneAt ──────────────────────────────────────────────────────
+// ── pasteAt ────────────────────────────────────────────────────────────────
 
 describe('pasteAt', () => {
   it('ripple-inserts after the host when cursor is INSIDE a clip', () => {
@@ -670,24 +665,6 @@ describe('pasteAt', () => {
   })
 })
 
-describe('cloneAt', () => {
-  it('drops a duplicate just past the source clip, extending the timeline', () => {
-    const c = makeClip(0, 300, { volume: 0.5 })
-    const s = withClips(1000, [c])
-    const next = cloneAt(s, 100)
-    expect(next.clips).toHaveLength(2)
-    expect(next.clips[1].endMs - next.clips[1].startMs).toBe(300)
-    expect(next.clips[1].volume).toBe(0.5)
-  })
-
-  it('refuses if the cursor is not on a clip', () => {
-    const a = makeClip(0, 200)
-    const b = makeClip(800, 1000)
-    const s = withClips(1000, [a, b])
-    expect(cloneAt(s, 500)).toBe(s)
-  })
-})
-
 // ── moveToSlot ─────────────────────────────────────────────────────────────
 
 describe('moveToSlot', () => {
@@ -715,6 +692,31 @@ describe('moveToSlot', () => {
     const b = makeClip(300, 500, { id: 'b' })
     const s = withClips(500, [a, b])
     expect(moveToSlot(s, 'a', 0)).toBe(s)
+  })
+
+  it('shifts a boundary-onset note with the RIGHT clip (right-wins), not the left', () => {
+    // Repro of the "B(1) becomes empty after dragging AB(2) onto it" bug.
+    // Pre-move layout has b1 starting exactly at ab2.endMs (touching).  The
+    // duplicate note created for b1 sits at b1.startMs, which is on the
+    // boundary.  Ascending iteration + inclusive bounds matched ab2 first
+    // (left-wins), so the note picked up ab2's shift (0) and got stranded
+    // at the old position when b1 moved.
+    const lead = makeClip(0, 5360, { id: 'lead' })
+    const stb  = makeClip(5360, 6312, { id: 'stb' })
+    const ab2  = makeClip(6576, 7528, { id: 'ab2' })
+    const b1   = makeClip(7528, 7792, { id: 'b1' })
+    const s: FreeSnapshot = {
+      notes:       [note('boundary', 57, 7528, 7792)],
+      clips:       [lead, stb, ab2, b1],
+      durationMs:  7792,
+      trimStartMs: 0,
+      trimEndMs:   7792,
+    }
+    const out = moveToSlot(s, 'ab2', 3)
+    const newB1 = out.clips.find(c => c.id === 'b1')!
+    expect([newB1.startMs, newB1.endMs]).toEqual([6312, 6576])
+    const noteAfter = out.notes.find(n => n.id === 'boundary')!
+    expect([noteAfter.startMs, noteAfter.endMs]).toEqual([6312, 6576])
   })
 })
 

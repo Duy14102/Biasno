@@ -4,10 +4,10 @@ import { useLanguage } from '@/i18n'
 import type { Clip } from '@/freeMode'
 
 // Right-click context menu for the trim bar.  Hosts the per-clip / per-gap
-// operations: split, copy, paste, delete, comment, volume, lock/unlock,
-// clone.  Items disable themselves based on what the click position points
-// at (a clip vs. a gap; locked vs. unlocked) so the menu always reads as
-// "all options visible, only the meaningful ones live".
+// operations: split, copy, paste, delete, comment, volume, lock/unlock.
+// Items disable themselves based on what the click position points at (a
+// clip vs. a gap; locked vs. unlocked) so the menu always reads as "all
+// options visible, only the meaningful ones live".
 
 export interface ClipMenuActions {
   onSplit:       (atMs: number) => void
@@ -17,7 +17,6 @@ export interface ClipMenuActions {
   onSetComment:  (atMs: number, comment: string) => void
   onSetVolume:   (atMs: number, volume: number) => void
   onToggleLock:  (atMs: number) => void
-  onClone:       (atMs: number) => void
 }
 
 interface Props {
@@ -107,11 +106,6 @@ export default function ClipContextMenu({
         label={t('clipMenuPaste')}
         disabled={!hasClipboard}
         onClick={run(() => actions.onPaste(atMs))}
-      />
-      <MenuItem
-        label={t('clipMenuClone')}
-        disabled={!onClip}
-        onClick={run(() => actions.onClone(atMs))}
       />
       <MenuItem
         label={t('clipMenuDelete')}

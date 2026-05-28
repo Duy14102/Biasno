@@ -248,7 +248,6 @@ export const en: Translations = {
   clipMenuSplit:           'Split',
   clipMenuCopy:            'Copy',
   clipMenuPaste:           'Paste',
-  clipMenuClone:           'Clone',
   clipMenuDelete:          'Delete',
   clipMenuComment:         'Comment…',
   clipMenuCommentPlaceholder: 'Add a note for this clip',

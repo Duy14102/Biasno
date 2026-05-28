@@ -1,7 +1,6 @@
 export * from './clipOps'
 export * from './freeModeExport'
 export * from './library'
-export * from './peaks'
 export * from './types'
 export * from './useEditor'
 export * from './useFreeMode'

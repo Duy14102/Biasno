@@ -1,5 +1,6 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type { Clip } from '@/freeMode'
+import { BubbleIcon } from './icons'
 
 // Hit-zone + ring outline overlaid on top of the timeline waveform canvas
 // for one clip.  Captures right-click → context menu and mousedown →
@@ -19,6 +20,90 @@ interface Props {
   pxPerMs:         number
   anyDragging:     boolean
   onMouseDown?:    (e: React.MouseEvent) => void
+}
+
+// Chat-bubble comment badge.  Collapsed: round pill with just the bubble
+// glyph, anchored to the clip's top-right corner.  Hover: animates open
+// to the left, revealing the comment text.  If the text overflows the
+// bubble at full expansion, swaps to a seamless duplicated marquee that
+// scrolls infinitely; otherwise stays static.
+function CommentBubble({ text }: { text: string }): React.JSX.Element {
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const textRef    = useRef<HTMLSpanElement>(null)
+  const [hovered, setHovered] = useState(false)
+  const [marquee, setMarquee] = useState(false)
+
+  useEffect(() => {
+    if (!hovered) { setMarquee(false); return }
+    const id = window.setTimeout(() => {
+      const w = wrapperRef.current
+      const t = textRef.current
+      if (!w || !t) return
+      setMarquee(t.scrollWidth > w.clientWidth + 1)
+    }, 340)
+    return () => window.clearTimeout(id)
+  }, [hovered, text])
+
+  const marqueeDur = `${Math.max(5, Math.min(20, text.length * 0.22))}s`
+
+  return (
+    <div
+      className="fm-comment-bubble absolute top-1 right-2 z-[15] pointer-events-auto"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onMouseDown={e => e.stopPropagation()}
+    >
+      <div
+        className={[
+          'flex flex-row-reverse items-center h-[18px] cursor-help select-none',
+          'rounded-full rounded-bl-[3px]',
+          'bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-500',
+          'ring-1 ring-emerald-200/60',
+          'transition-[max-width,padding,box-shadow] duration-[320ms]',
+          'ease-[cubic-bezier(0.22,1,0.36,1)] overflow-hidden',
+          hovered
+            ? 'max-w-[220px] pl-2 pr-1.5 shadow-[0_4px_14px_-2px_rgba(16,185,129,0.65)]'
+            : 'max-w-[18px] px-[3px] shadow-[0_2px_8px_-2px_rgba(16,185,129,0.5)]',
+        ].join(' ')}
+        title={text}
+      >
+        <BubbleIcon className="w-3 h-3 text-white shrink-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]" />
+        <div
+          ref={wrapperRef}
+          className={[
+            'min-w-0 overflow-hidden mr-1',
+            'transition-opacity duration-200',
+            hovered ? 'opacity-100 delay-[120ms]' : 'opacity-0',
+          ].join(' ')}
+        >
+          <div
+            className="inline-flex whitespace-nowrap will-change-transform"
+            style={marquee
+              ? { animation: `fm-comment-marquee ${marqueeDur} linear infinite` }
+              : undefined}
+          >
+            <span
+              ref={textRef}
+              className={[
+                'text-white text-[10px] font-medium leading-none tracking-tight',
+                marquee ? 'pr-8' : '',
+              ].join(' ')}
+            >
+              {text}
+            </span>
+            {marquee && (
+              <span
+                aria-hidden
+                className="text-white text-[10px] font-medium leading-none tracking-tight pr-8"
+              >
+                {text}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function ClipOverlay({
@@ -71,14 +156,7 @@ export default function ClipOverlay({
           LOCK
         </span>
       )}
-      {clip.comment && (
-        <span
-          title={clip.comment}
-          className="absolute top-1 right-2 px-1.5 py-px rounded-full bg-emerald-500/95 text-white text-[9px] font-medium pointer-events-auto cursor-help"
-        >
-          ●
-        </span>
-      )}
+      {clip.comment && <CommentBubble text={clip.comment} />}
       {Math.round(clip.volume * 100) !== 100 && (
         <span className="absolute bottom-1 right-2 px-1 rounded-sm bg-slate-900/80 text-white text-[8px] font-mono tabular-nums pointer-events-none">
           {Math.round(clip.volume * 100)}%

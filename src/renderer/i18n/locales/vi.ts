@@ -262,7 +262,6 @@ export const vi = {
   clipMenuSplit:           'Tách đoạn',
   clipMenuCopy:            'Sao chép',
   clipMenuPaste:           'Dán',
-  clipMenuClone:           'Nhân bản',
   clipMenuDelete:          'Xoá đoạn',
   clipMenuComment:         'Ghi chú…',
   clipMenuCommentPlaceholder: 'Thêm ghi chú cho đoạn này',

@@ -27,4 +27,23 @@ export const TIMELINE_STYLES = `
 
 @keyframes fm-ghost-fade { from { opacity: 0; } to { opacity: 0.55; } }
 .fm-ghost { animation: fm-ghost-fade 160ms ease-out both; }
+
+.fm-trim-chip {
+  top: 0;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  will-change: transform;
+  background-color: rgba(59, 130, 246, 0.15);
+  transition:
+    background-color 180ms ease,
+    box-shadow       180ms ease;
+}
+.fm-trim-chip[data-pinned="true"] {
+  background-color: rgba(59, 130, 246, 0.3);
+  box-shadow:
+    inset 0 0 0 1px rgba(96, 165, 250, 0.6),
+    0 2px 6px -2px rgba(59, 130, 246, 0.35);
+}
 `

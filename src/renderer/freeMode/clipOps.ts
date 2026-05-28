@@ -170,16 +170,15 @@ export function splitAt(s: FreeSnapshot, ms: number): FreeSnapshot {
 // Note re-anchoring (the bit that makes "split + delete one half preserves
 // the other half's audio" work):
 //   • Note onset BEFORE target: keep as-is.  Its tail extending into the
-//     deleted clip is naturally clamped by buildWindows.
+//     deleted clip is naturally clamped at playback time by chunkEndAt.
 //   • Note onset AFTER target: shift left by span.
 //   • Note onset INSIDE target, audio ends inside target: drop.
 //   • Note onset INSIDE target, audio extends past target: RE-ANCHOR.  The
 //     audible portion that lives in the next surviving clip is preserved —
 //     new startMs = target.endMs (snapped to where the surviving clip
-//     begins), shifted left by span.  We mark `continues: true` so the
-//     envelope picks up at sustain level instead of attacking afresh, so
-//     the preserved audio sounds + draws like a continuation, not a new
-//     note appearing out of nowhere.
+//     begins), shifted left by span.  Playback owns the envelope; the
+//     piano-roll preview just draws the rectangle, so no extra phase
+//     bookkeeping lives here.
 export function deleteAt(s: FreeSnapshot, ms: number): FreeSnapshot {
   const mat = materialise(s)
   const target = findClipAt(mat, ms)
@@ -191,48 +190,56 @@ export function deleteAt(s: FreeSnapshot, ms: number): FreeSnapshot {
     survivors.some(c => sMs >= c.startMs && sMs <= c.endMs)
   const hasSurvivorAfter = survivors.some(c => c.startMs >= target.endMs)
 
+  // POST-delete clip layout, computed once up front so we can clamp each
+  // surviving note's endMs to its real audible reach.  Without this clamp
+  // a note whose tail was already past the surviving region carries a
+  // PHANTOM endMs; a later paste/clone that inserts a touching clip
+  // extends chunkEndAt past the surviving region and the phantom tail
+  // reappears, drawing as a second disconnected note segment next to
+  // the actual copy.
+  const clips = sortClips(survivors.map(c =>
+    c.startMs >= target.endMs ? { ...c, startMs: c.startMs - span, endMs: c.endMs - span } : c,
+  ))
+
+  const clampToChunk = (n: RecordedNote): RecordedNote => {
+    const ce = chunkEndAt(clips, n.startMs) ?? n.endMs
+    return n.endMs > ce ? { ...n, endMs: ce } : n
+  }
+
   const notes = mat.notes.flatMap<RecordedNote>((n) => {
     const onsetInTarget = n.startMs >= target.startMs && n.startMs <= target.endMs
     const onsetAfter    = n.startMs > target.endMs
 
     if (onsetAfter) {
-      return [{ ...n, startMs: n.startMs - span, endMs: n.endMs - span }]
+      return [clampToChunk({ ...n, startMs: n.startMs - span, endMs: n.endMs - span })]
     }
 
     if (onsetInTarget) {
       // Boundary note from a prior split — onset also lives in a survivor.
-      // Preserve on the survivor side (no continues flag — the note's own
-      // envelope is what the surviving side wants).
       if (inSurvivor(n.startMs)) {
-        return [{ ...n, startMs: n.startMs - span, endMs: n.endMs - span }]
+        return [clampToChunk({ ...n, startMs: n.startMs - span, endMs: n.endMs - span })]
       }
       // Note's audio extends past the deleted clip's end into a surviving
-      // clip — re-anchor to the surviving region, mark as continuation.
+      // clip — re-anchor to the surviving region.
       if (n.endMs > target.endMs && hasSurvivorAfter) {
-        return [{
+        return [clampToChunk({
           ...n,
-          startMs:   target.startMs,            // = target.endMs - span (where the next clip lands after ripple)
-          endMs:     n.endMs - span,
-          continues: true,
-        }]
+          startMs: target.startMs,     // = target.endMs - span (where the next clip lands after ripple)
+          endMs:   n.endMs - span,
+        })]
       }
       // Note entirely inside the deleted clip → drop.
       return []
     }
 
-    // Onset is before target.  Keep the note as-is; buildWindows clamps
-    // its audible tail to the owning clip's end.
-    return [n]
+    // Onset before target — sever any phantom tail past the surviving chunk.
+    return [clampToChunk(n)]
   })
-
-  const clips = survivors.map(c =>
-    c.startMs >= target.endMs ? { ...c, startMs: c.startMs - span, endMs: c.endMs - span } : c,
-  )
 
   return {
     ...mat,
     notes:      notes.sort((a, b) => a.startMs - b.startMs),
-    clips:      sortClips(clips),
+    clips,
     durationMs: Math.max(0, mat.durationMs - span),
     trimEndMs:  Math.max(mat.trimStartMs, mat.trimEndMs - span),
   }
@@ -269,24 +276,58 @@ export function setCommentAt(s: FreeSnapshot, ms: number, comment: string): Free
 
 // ── Copy / Paste / Clone ───────────────────────────────────────────────────
 
-function noteOnsetInClip(n: RecordedNote, c: Clip): boolean {
-  return n.startMs >= c.startMs && n.startMs <= c.endMs
-}
-
-function duplicateNotes(notes: RecordedNote[], source: Clip, destStartMs: number): RecordedNote[] {
+// Notes audibly visible in `source` come from two places:
+//   (a) Onsets that sit inside source's [startMs, endMs).
+//   (b) Notes whose onset lives in an earlier clip but whose audible tail
+//       extends into source because the two clips touch (chunkEndAt rule
+//       — same one the renderer + playback engine use).
+// Both kinds need to be reproduced when copying/cloning, otherwise the
+// destination clip's piano-roll looks different from the source it was
+// duplicated from (the user-visible bug: a clone of a clip that only
+// holds a sustained-note tail comes out empty).
+function duplicateNotes(
+  notes: readonly RecordedNote[],
+  clips: readonly Clip[],
+  source: Clip,
+  destStartMs: number,
+): RecordedNote[] {
   const offset = destStartMs - source.startMs
   const out: RecordedNote[] = []
   for (const n of notes) {
-    if (!noteOnsetInClip(n, source)) continue
-    out.push({
-      ...n,
-      id:        newPastedNoteId(),
-      startMs:   n.startMs + offset,
-      endMs:     n.endMs   + offset,
-      // Pasted duplicate is a fresh sound; never inherit the delete-time
-      // continuation flag from the source.
-      continues: undefined,
-    })
+    const chunkEnd   = chunkEndAt(clips, n.startMs) ?? n.endMs
+    const audibleEnd = Math.min(n.endMs, chunkEnd)
+    if (audibleEnd <= source.startMs || n.startMs >= source.endMs) continue
+
+    if (n.startMs >= source.startMs) {
+      // (a) Onset inside source.  Clamp endMs to source.endMs so the
+      // copy doesn't carry a phantom tail past the destination clip — if
+      // we just `n.endMs + offset` here, a sustained-note copy ends up
+      // longer than the dest clip, and the next paste/clone that adds a
+      // touching clip after dest resurrects that phantom as a second
+      // visible note segment.  The source clip itself only shows up to
+      // source.endMs visually, so the copy stops there too.
+      const visibleEnd = Math.min(n.endMs, source.endMs)
+      out.push({
+        ...n,
+        id:      newPastedNoteId(),
+        startMs: n.startMs + offset,
+        endMs:   visibleEnd + offset,
+      })
+    } else {
+      // (b) Tail extension — create a fresh note that covers the audible
+      // window inside source, anchored to the destination clip's start.
+      // Same pitch + velocity so the visual matches.  Audio loses the
+      // original sustained continuation (this attacks afresh) but the
+      // clip the user duplicated already only carried the tail visually,
+      // so the trade is "see what you cloned" over the inherited sustain.
+      const tailEnd = Math.min(audibleEnd, source.endMs)
+      out.push({
+        ...n,
+        id:      newPastedNoteId(),
+        startMs: source.startMs + offset,
+        endMs:   tailEnd         + offset,
+      })
+    }
   }
   return out
 }
@@ -337,7 +378,9 @@ function rippleInsert(s: FreeSnapshot, source: Clip, insertStartMs: number): Fre
     locked:  source.locked,
     comment: source.comment,
   })
-  const dupNotes = duplicateNotes(mat.notes, source, dup.startMs)
+  // Compute dup notes against the PRE-RIPPLE clip layout — that's where
+  // chunkEndAt knows which clips were touching source before we inserted.
+  const dupNotes = duplicateNotes(mat.notes, mat.clips, source, dup.startMs)
 
   const trimEndMs = insert <= mat.trimEndMs
     ? mat.trimEndMs + width
@@ -372,7 +415,7 @@ export function pasteAt(s: FreeSnapshot, source: Clip, ms: number): FreeSnapshot
       locked:  source.locked,
       comment: source.comment,
     })
-    const dupNotes = duplicateNotes(mat.notes, source, dup.startMs)
+    const dupNotes = duplicateNotes(mat.notes, mat.clips, source, dup.startMs)
     return {
       ...mat,
       clips: sortClips([...mat.clips, dup]),
@@ -381,14 +424,6 @@ export function pasteAt(s: FreeSnapshot, source: Clip, ms: number): FreeSnapshot
   }
 
   return rippleInsert(s, source, ms)
-}
-
-// Clone = ripple-paste-of-self anchored just past the source clip's end.
-export function cloneAt(s: FreeSnapshot, ms: number): FreeSnapshot {
-  const mat = materialise(s)
-  const target = findClipAt(mat, ms)
-  if (!target) return s
-  return rippleInsert(mat, target, target.endMs)
 }
 
 // ── Move (reorder by slot) ─────────────────────────────────────────────────
@@ -422,8 +457,17 @@ export function moveToSlot(s: FreeSnapshot, clipId: string, targetSlot: number):
     cursor += w
   }
 
+  // Right-wins at clip boundaries — same convention as clipAt / chunkEndAt /
+  // findClipAt.  Without this, a note whose onset sits exactly on a touching-
+  // clip boundary (common when a paste lands adjacent to an existing clip, or
+  // a split puts a note's onset at the cut) matches the LEFT clip in ascending
+  // iteration.  If the left clip's shift is 0 and the right clip moved, the
+  // note gets stranded at the old position, outside any clip — manifests as
+  // "B(1) is empty after dragging AB(2) onto it", with the duplicate note
+  // floating past durationMs.
   const notes = mat.notes.map((n) => {
-    for (const oc of sorted) {
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const oc = sorted[i]
       if (n.startMs >= oc.startMs && n.startMs <= oc.endMs) {
         const delta = shifts.get(oc.id) ?? 0
         return delta === 0 ? n : { ...n, startMs: n.startMs + delta, endMs: n.endMs + delta }

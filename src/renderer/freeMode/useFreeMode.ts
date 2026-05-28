@@ -44,7 +44,6 @@ export interface FreeModeApi {
   setClipCommentAt:(atMs: number, comment: string) => void
   copyClipAt:      (atMs: number) => void
   pasteClipAt:     (atMs: number) => void
-  cloneClipAt:     (atMs: number) => void
   moveClipTo:      (clipId: string, slot: number) => void
 
   undo: () => void
@@ -116,7 +115,6 @@ export function useFreeMode(opts: Options = {}): FreeModeApi {
   const setClipVolumeAt = useCallback((ms: number, v: number) => editor.apply(s => ops.setVolumeAt(s, ms, v)),  [editor])
   const toggleLockAt    = useCallback((ms: number) => editor.apply(s => ops.toggleLockAt(s, ms)),               [editor])
   const setClipCommentAt= useCallback((ms: number, c: string) => editor.apply(s => ops.setCommentAt(s, ms, c)), [editor])
-  const cloneClipAt     = useCallback((ms: number) => editor.apply(s => ops.cloneAt(s, ms)),                    [editor])
   const moveClipTo      = useCallback((clipId: string, slot: number) => editor.apply(s => ops.moveToSlot(s, clipId, slot)), [editor])
 
   const setTrimStart = useCallback((ms: number) => editor.apply(s => ops.setTrimStart(s, ms)), [editor])
@@ -150,7 +148,7 @@ export function useFreeMode(opts: Options = {}): FreeModeApi {
     setTrimStart, setTrimEnd,
 
     splitClipAt, deleteClipAt, setClipVolumeAt, toggleLockAt,
-    setClipCommentAt, copyClipAt, pasteClipAt, cloneClipAt, moveClipTo,
+    setClipCommentAt, copyClipAt, pasteClipAt, moveClipTo,
 
     undo: editor.undo,
     redo: editor.redo,

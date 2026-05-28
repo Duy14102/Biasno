@@ -1,7 +1,7 @@
 // Coordinator for the Free-Mode timeline.  Owns nothing complex itself —
 // every sub-feature lives in a focused hook or sub-component:
 //
-//   • TimelineWaveform  — Canvas2D waveform painted from peaks
+//   • ClipNotesPreview  — Canvas2D piano-roll painted from notes data
 //   • TimelineRuler     — ms ticks + labels
 //   • TrimHandle        — visual handle (drag logic in useTrimDrag)
 //   • useTrimDrag       — handle drag with snap-to-playhead
@@ -17,9 +17,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Clip, ClipView, RecordedNote } from '@/freeMode'
 import { clipAt } from '@/freeMode'
 import ClipContextMenu, { type ClipMenuActions } from './ClipContextMenu'
+import ClipNotesPreview from './ClipNotesPreview'
 import ClipOverlay from './ClipOverlay'
 import TimelineRuler from './TimelineRuler'
-import TimelineWaveform from './TimelineWaveform'
 import TrimHandle from './TrimHandle'
 import { PlusCircleIcon } from './icons'
 import { TIMELINE_STYLES } from './timelineStyles'
@@ -65,6 +65,52 @@ export default function TrimRange({
   const endPct   = ((endMs   - min) / range) * 100
 
   const { pxPerMs, scaledMinWidth, containerRef: scrollContainerRef } = useTimelineScale(range, max)
+
+  // Drive the trim-start / trim-end chips via direct DOM writes so they
+  // pin to the viewport synchronously while the user scrolls — React
+  // state lags one frame and makes the chips look like they scroll along
+  // with the timeline.  rAF coalesces bursts; the chips themselves use
+  // `transform: translateX()` so the GPU handles the motion.
+  const startChipRef = useRef<HTMLSpanElement>(null)
+  const endChipRef   = useRef<HTMLSpanElement>(null)
+  const LABEL_HALF_PX = 28
+  const EDGE_PAD_PX   = 6
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    let raf = 0
+    const apply = () => {
+      raf = 0
+      const sx = el.scrollLeft
+      const vw = el.clientWidth
+      const visL = sx + LABEL_HALF_PX + EDGE_PAD_PX
+      const visR = Math.max(visL, sx + vw - LABEL_HALF_PX - EDGE_PAD_PX)
+      const sNat = (startMs - min) * pxPerMs
+      const eNat = (endMs   - min) * pxPerMs
+      const sClamped = Math.max(visL, Math.min(visR, sNat))
+      const eClamped = Math.max(visL, Math.min(visR, eNat))
+      const sChip = startChipRef.current
+      const eChip = endChipRef.current
+      if (sChip) {
+        sChip.style.transform = `translate(${sClamped}px, 0) translateX(-50%)`
+        sChip.dataset.pinned  = sClamped !== sNat ? 'true' : 'false'
+      }
+      if (eChip) {
+        eChip.style.transform = `translate(${eClamped}px, 0) translateX(-50%)`
+        eChip.dataset.pinned  = eClamped !== eNat ? 'true' : 'false'
+      }
+    }
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(apply) }
+    apply()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      el.removeEventListener('scroll', onScroll)
+      ro.disconnect()
+    }
+  }, [scrollContainerRef, startMs, endMs, min, pxPerMs])
 
   // Effective clips for hit-testing / overlays — materialise the implicit
   // default when clips[] is empty so the user can still right-click a
@@ -165,12 +211,31 @@ export default function TrimRange({
     setMenu({ x: e.clientX, y: e.clientY, atMs: ms, splitAtMs: playhead, clipHere: here })
   }, [clipActions, snapshotForMenu, msAtClientX, playbackMs])
 
-  // ── Playhead pct ──────────────────────────────────────────────────────
+  // ── Playhead pct + scrub drag ─────────────────────────────────────────
   const playPct = playbackMs !== undefined ? ((playbackMs - min) / range) * 100 : 0
+  const [scrubbing, setScrubbing] = useState(false)
   const playVisible =
     playbackMs !== undefined &&
-    playbackMs >= startMs &&
-    playbackMs <= endMs
+    ((playbackMs >= startMs && playbackMs <= endMs) || scrubbing)
+
+  const onPlayheadMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!onSeek) return
+    e.preventDefault()
+    e.stopPropagation()
+    setScrubbing(true)
+    const seek = (clientX: number) => {
+      const ms = msAtClientX(clientX)
+      onSeek(Math.max(startMs, Math.min(endMs, ms)))
+    }
+    const onMove = (ev: MouseEvent) => seek(ev.clientX)
+    const onUp = () => {
+      setScrubbing(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [onSeek, msAtClientX, startMs, endMs])
 
   return (
     <div className="flex flex-col gap-2 select-none">
@@ -180,16 +245,18 @@ export default function TrimRange({
         <div ref={scrollContainerRef} className="fm-timeline-scroll flex-1 min-w-0 overflow-x-auto">
           <div className="flex flex-col gap-1.5" style={{ minWidth: scaledMinWidth }}>
 
-            <div className="relative h-4 text-[11px] font-mono tabular-nums">
+            <div className="relative h-4 text-[11px] font-mono tabular-nums leading-4">
               <span
-                className="absolute -translate-x-1/2 px-1 rounded bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold"
-                style={{ left: `${startPct}%` }}
+                ref={startChipRef}
+                data-pinned="false"
+                className="fm-trim-chip absolute top-0 left-0 px-1 rounded font-semibold text-blue-700 dark:text-blue-300"
               >
                 {formatMs(startMs)}
               </span>
               <span
-                className="absolute -translate-x-1/2 px-1 rounded bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold"
-                style={{ left: `${endPct}%` }}
+                ref={endChipRef}
+                data-pinned="false"
+                className="fm-trim-chip absolute top-0 left-0 px-1 rounded font-semibold text-blue-700 dark:text-blue-300"
               >
                 {formatMs(endMs)}
               </span>
@@ -200,9 +267,9 @@ export default function TrimRange({
             <div
               ref={trackRef}
               onContextMenu={onContextMenu}
-              className="relative h-24 rounded-xl bg-slate-200/80 dark:bg-slate-950 overflow-hidden"
+              className="relative h-24 rounded-xl overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200/80 dark:from-slate-900 dark:to-slate-950 ring-1 ring-slate-200/70 dark:ring-slate-800/80 shadow-inner shadow-slate-900/5 dark:shadow-black/30"
             >
-              <TimelineWaveform
+              <ClipNotesPreview
                 notes={notes}
                 clips={effClips}
                 durationMs={max}
@@ -284,22 +351,46 @@ export default function TrimRange({
 
               {playVisible && (
                 <div
-                  aria-hidden
+                  onMouseDown={onSeek ? onPlayheadMouseDown : undefined}
                   className={[
-                    'absolute top-0 bottom-0 w-0.5 -ml-px pointer-events-none z-[18] transition-colors',
-                    playbackActive ? 'bg-white' : 'bg-white/85',
+                    'absolute top-0 bottom-0 w-3 -ml-[6px] z-[19] group',
+                    onSeek
+                      ? scrubbing
+                        ? 'pointer-events-auto cursor-grabbing'
+                        : 'pointer-events-auto cursor-ew-resize'
+                      : 'pointer-events-none',
                   ].join(' ')}
-                  style={{
-                    left: `${playPct}%`,
-                    boxShadow: playbackActive
-                      ? '0 0 8px rgba(255,255,255,0.85), 0 0 14px rgba(96,165,250,0.5)'
-                      : '0 0 4px rgba(255,255,255,0.4)',
-                  }}
+                  style={{ left: `${playPct}%`, touchAction: 'none' }}
+                  aria-label="Playhead"
+                  role="slider"
                 >
-                  <div className={[
-                    'absolute -top-1 -left-[5px] w-3 h-3 rounded-full bg-white shadow',
-                    playbackActive ? 'ring-2 ring-blue-300/60' : '',
-                  ].join(' ')} />
+                  <div
+                    aria-hidden
+                    className={[
+                      'absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 transition-colors',
+                      scrubbing
+                        ? 'bg-blue-300'
+                        : playbackActive ? 'bg-white' : 'bg-white/85',
+                    ].join(' ')}
+                    style={{
+                      boxShadow: scrubbing
+                        ? '0 0 10px rgba(147,197,253,0.9), 0 0 18px rgba(59,130,246,0.6)'
+                        : playbackActive
+                          ? '0 0 8px rgba(255,255,255,0.85), 0 0 14px rgba(96,165,250,0.5)'
+                          : '0 0 4px rgba(255,255,255,0.4)',
+                    }}
+                  />
+                  <div
+                    aria-hidden
+                    className={[
+                      'absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white shadow transition-transform',
+                      scrubbing
+                        ? 'scale-125 ring-2 ring-blue-400 shadow-blue-500/60'
+                        : playbackActive
+                          ? 'ring-2 ring-blue-300/60 group-hover:scale-110'
+                          : 'group-hover:scale-110',
+                    ].join(' ')}
+                  />
                 </div>
               )}
 

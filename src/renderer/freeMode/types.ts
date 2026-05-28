@@ -8,12 +8,6 @@ export interface RecordedNote {
   startMs:   number
   endMs:     number
   velocity:  number
-  // True when the note was re-anchored by `deleteAt` — its audio originally
-  // started earlier (in a now-deleted clip) so the envelope should pick up
-  // at sustain level instead of attacking from 0.  Set ONLY by deleteAt,
-  // never by splitAt: splitting must not touch notes, so this flag is
-  // exclusively a delete-time concern.
-  continues?: boolean
 }
 
 // A "clip" is a sub-region inside [trimStartMs, trimEndMs] that the user can

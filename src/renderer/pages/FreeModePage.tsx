@@ -106,7 +106,7 @@ export default function FreeModePage(): React.JSX.Element {
     startRecord, continueRecord, stopRecord, clear, playInput,
     setTrimStart, setTrimEnd, undo, redo, replaceSnapshot,
     splitClipAt, deleteClipAt, setClipVolumeAt, toggleLockAt,
-    setClipCommentAt, copyClipAt, pasteClipAt, cloneClipAt, moveClipTo, clipboard,
+    setClipCommentAt, copyClipAt, pasteClipAt, moveClipTo, clipboard,
   } = freeMode
 
   // When the bar has no splits (clips.length ≤ 1, including the implicit
@@ -130,8 +130,7 @@ export default function FreeModePage(): React.JSX.Element {
     onSetComment: setClipCommentAt,
     onSetVolume:  setClipVolumeAt,
     onToggleLock: toggleLockAt,
-    onClone:      cloneClipAt,
-  }), [splitClipAt, copyClipAt, pasteClipAt, handleClipDelete, setClipCommentAt, setClipVolumeAt, toggleLockAt, cloneClipAt])
+  }), [splitClipAt, copyClipAt, pasteClipAt, handleClipDelete, setClipCommentAt, setClipVolumeAt, toggleLockAt])
 
   // ─── Live-update library entry on field / trim changes ─────────────
   // Skips the very first render after a load — that's how we avoid

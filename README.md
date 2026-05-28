@@ -12,7 +12,7 @@ Open any standard MIDI file, pick a hand and a skill (notes, rhythm, or both), a
 - 🖐 **Per-hand practice** — Watch & Listen demo, plus Melody / Rhythm / Melody + Rhythm for the right hand, left hand, or both. Switch modes mid-session.
 - 🎹 **Real piano support** — auto-connects USB MIDI keyboards. Computer keyboard fallback covers C3 – A5 when no piano is plugged in.
 - 🏆 **Challenge & leaderboard** — opt-in scoring with combos; per-(song, mode) ranking; loop iterations save too.
-- 🎙 **Free Mode** — record what you play, trim with a SoundCloud-style waveform editor, export to MIDI / MusicXML / PDF. Every take auto-saves to a local library.
+- 🎙 **Free Mode** — record what you play, edit on a piano-roll timeline (split / delete / copy / paste / volume / lock per clip), export to MIDI / MusicXML / PDF. Every take auto-saves to a local library.
 - 🌗 **Polished UI** — dark / light theme, animated mode-switch flash, mid-bar drag-to-set loop region, 3-2-1 countdown, BPM multiplier from 0.25× to 2.0×.
 - 🌐 **Bilingual** — strings live in `i18n/locales/<code>.ts`; add a language by dropping in one file.
 
@@ -115,9 +115,9 @@ A freestyle recording surface — same piano keyboard as practice, no song loade
 - Every Stop auto-creates a Library entry; subsequent name / author / trim edits live-update that entry.
 
 ### Editing
-- **Trim range** is a SoundCloud-style waveform with Microsoft-Clipchamp-style window-closing handles. Per-note ADSR envelopes feed a 128-bin amplitude graph; bars inside the trim glow blue → violet → fuchsia, outside dim to grey under a translucent veil. Handle drag commits on mouse-up so the undo stack stays clean.
-- **Click or drag the waveform** to scrub the white playhead — cursor flips to grabbing while held. The playhead's resting point doubles as the snap target for the trim handles (handles within 120 ms magnetise to it and flash amber) AND the play-from anchor (next Play starts there).
-- **Right-click the waveform** for a video-editor-style clip menu: **Split** cuts the bar at the playhead ms — adjacent clips touch in ms-space and the visible separation is a 1 px CSS inset on each card (notes at the boundary stay covered, never silenced). **Copy / Paste** duplicate a clip elsewhere in the bar, **Clone** drops a copy next to the source, **Delete** removes a clip (the gap stays — neighbouring clips don't shift), **Comment** attaches a note (fuchsia dot badge + tooltip), **Volume** is a per-clip gain slider (badge shows when ≠ 100%), and **Lock** marks a clip read-only (amber outline + LOCK badge — split / delete / volume / comment / paste-over all refuse). Every action is undo/redo tracked and persists with the library entry; MIDI / MusicXML / PDF export honour the splits, the per-clip volume scaling, and the silent gaps.
+- **Trim range** is a piano-roll preview with Microsoft-Clipchamp-style window-closing handles. Each note renders as a rounded rectangle: X = time, Y = MIDI pitch (auto-fit to the recording's pitch range), width = duration, hue = velocity on a violet → fuchsia gradient. Outside-trim regions dim under a translucent veil. The visual is rendered directly from the note array — no audio-buffer rendering, no envelope phase, no peaks pipeline — so every clip operation (split / delete / paste / move) trivially keeps the preview in sync with the data. Handle drag commits on mouse-up so the undo stack stays clean.
+- **Click the timeline** to seek; **grab the playhead** (12 px hit zone over the white line + knob) and drag to scrub — the knob scales up with a blue glow while held, and the playhead stays visible even when dragged past the trim window. The playhead's resting point doubles as the snap target for the trim handles (handles within 120 ms magnetise to it and flash amber) AND the play-from anchor (next Play starts there).
+- **Right-click the timeline** for a video-editor-style clip menu: **Split** cuts the clip at the playhead ms — adjacent clips touch in ms-space and the visible separation is a 1 px CSS inset on each card (notes at the boundary stay covered, never silenced). **Copy / Paste** duplicate a clip elsewhere in the timeline, **Delete** removes a clip (the gap stays — neighbouring clips don't shift), **Comment** attaches a note (emerald chat-bubble badge that expands on hover to reveal the text — long comments scroll horizontally in an infinite marquee), **Volume** is a per-clip gain slider (badge shows when ≠ 100%), and **Lock** marks a clip read-only (amber outline + LOCK badge — split / delete / volume / comment / paste-over all refuse). Every action is undo/redo tracked and persists with the library entry; MIDI / MusicXML / PDF export honour the splits, the per-clip volume scaling, and the silent gaps.
 - **Speed control** beside Play — `0.5× / 0.75× / 1× / 1.25× / 1.5× / 2×` presets with `-` / `+` nudges. Double-click the readout to reset to 1×.
 - **Undo / Redo** track trim edits only. Returning to the recording's baseline trim wipes the history so the buttons grey out instead of staying lit at no-op states.
 - **Clear** is gated behind a confirm modal. Clearing only removes the working draft — the Library entry is preserved.
@@ -184,9 +184,9 @@ src/
         ├── library/  HomePage sub-components + useFileLibrary hook:
         │             FileRow, DevicePanel, MidiDevicePicker,
         │             DeleteConfirmModal, FolderConflictModal, LeaderboardModal.
-        └── freeMode/ FreeModeHeader, RecorderPanel, TrimRange (waveform +
-                      dual-thumb), ExportMenu, SpeedControl, LibraryModal,
-                      ClearConfirmModal, icons.
+        └── freeMode/ FreeModeHeader, RecorderPanel, TrimRange (piano-roll +
+                      dual-thumb), ClipNotesPreview, ExportMenu, SpeedControl,
+                      LibraryModal, ClearConfirmModal, icons.
 ```
 
 **Placement rules of thumb**
@@ -217,9 +217,9 @@ src/
 
 **Scoring decoupling.** `useScoring` only knows about hits / misses / wrong-presses. The playback engine raises callbacks (`onHit` / `onMissed` / `onSongEnd` / `onLoopWrap`) and `PracticePage` wires them to scoring. Turning challenge off simply stops passing those callbacks — no special-cased branches in the engine.
 
-**Free Mode note tail.** `AudioEngine.noteAtTime` accepts an optional `tailSec` (default 1.5 s) that lets a piano sample's natural release ring past each note's logical end — practice playback wants this so notes don't snap off. Free Mode passes `tailSec = 0.05` so a sustained note from before a click-to-seek point doesn't bleed into a "silent" gap created by Continue. Playback hard-cuts at the same boundary the waveform draws and the export files spell out.
+**Free Mode note tail.** `AudioEngine.noteAtTime` accepts an optional `tailSec` (default 1.5 s) that lets a piano sample's natural release ring past each note's logical end — practice playback wants this so notes don't snap off. Free Mode passes `tailSec = 0.05` so a sustained note from before a click-to-seek point doesn't bleed into a "silent" gap created by Continue. Playback hard-cuts at the same boundary the piano roll draws and the export files spell out.
 
-**Free Mode waveform-to-ms parity.** Each 40 ms envelope bin is rendered as an absolutely-positioned bar anchored at its centre ms (`left: ((centerMs - clip.startMs) / clipWidth) * 100%`, centred with `translate(-50%, -50%)`) — never flex-distributed inside the clip card. This makes the bar's pixel position equal its real ms, so `splitAt` can be a plain linear cut at the playhead and the user's 50 %-of-bar rule emerges naturally from bin allocation (`b.centerMs >= clip.startMs && b.centerMs < clip.endMs` — right-exclusive so a bin centre at the cut goes to the right clip only, no double-rendering). Earlier attempts to fix splits via snap-to-note-boundary logic in `splitAt` were treating a symptom of flex-distributed bars; once the visual matched the data, the snap had to come out (it teleported sustained-note splits to the extremes).
+**Free Mode piano-roll preview.** The clip editor used to render a synthesised waveform (OfflineAudioContext → peaks → bars), which forced an audio-buffer-shaped visual to stay coherent through purely data-shaped operations (split / delete / paste / ripple). A whole class of bugs lived in that gap — envelope phase at the cut, peak normalisation across clip ids, async render races. The current `ClipNotesPreview` renders straight from `RecordedNote[]` to a Canvas2D piano roll (X = time, Y = MIDI pitch auto-fit, hue = velocity), so the visual is the data and clip operations are pure array transforms. Right-exclusive ownership at the cut (`n.startMs < c.startMs || n.startMs >= c.endMs` to skip) mirrors `clipAt` / `chunkEndAt` so split-touching boundaries assign onsets to the RIGHT clip — same convention everywhere.
 
 **Cross-page volume contract.** `AudioEngine.stopAll()` silences the master gain to 0 by design — callers must `restoreVolume()` before the next play. Practice page navigations leave the gain muted; Free Mode restores it both on mount AND at the start of every play, so navigating Practice → Home → Free Mode → Play produces audio on the very first press without needing a pause/play wake-up.
 

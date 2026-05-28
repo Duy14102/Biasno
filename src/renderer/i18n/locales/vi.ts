@@ -28,7 +28,7 @@ export const vi = {
   midiUnavailable:        'MIDI không khả dụng',
   noDeviceConnected:      'Chưa kết nối đàn',
   noWebMidiSupport:       'Trình duyệt không hỗ trợ Web MIDI API',
-  connectUsbInstruction:  'Cắm đàn qua cổng USB rồi thử lại — hoặc dùng phím máy tính bên dưới.',
+  connectUsbInstruction:  'Cắm đàn qua cổng USB rồi thử lại',
   computerKeys:           'Phím máy tính',
   keyboardHelpTitle:      'Phím máy tính',
   keyboardHelpHint:       'Chưa có đàn? Dùng bàn phím để chơi 34 note (C3 – A5).',
@@ -257,6 +257,20 @@ export const vi = {
   freeIdleHint:            'Nhấn Ghi âm rồi bắt đầu chơi piano — mỗi phím sẽ được lưu lại.',
   freeRecordingHint:       '● Đang ghi âm — nhấn Dừng khi xong.',
   freeReadyHint:           'Đặt tên, cắt đoạn, xem trước rồi xuất file.',
+
+  // ── Clip context menu (right-click on the trim bar) ─────────────────────
+  clipMenuSplit:           'Tách đoạn',
+  clipMenuCopy:            'Sao chép',
+  clipMenuPaste:           'Dán',
+  clipMenuDelete:          'Xoá đoạn',
+  clipMenuComment:         'Ghi chú…',
+  clipMenuCommentPlaceholder: 'Thêm ghi chú cho đoạn này',
+  clipMenuVolume:          'Âm lượng',
+  clipMenuLock:            'Khoá',
+  clipMenuUnlock:          'Mở khoá',
+  clipMenuSave:            'Lưu',
+  clipMenuClear:           'Xoá',
+
   keys:                    'phím',
 }
 

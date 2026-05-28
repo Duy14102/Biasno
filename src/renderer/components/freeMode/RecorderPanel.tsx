@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useLanguage } from '@/i18n'
 import type { FreeSnapshot } from '@/freeMode'
+import type { ClipMenuActions } from './ClipContextMenu'
 import TrimRange         from './TrimRange'
 import ExportMenu        from './ExportMenu'
 import SpeedControl      from './SpeedControl'
@@ -8,9 +9,8 @@ import ClearConfirmModal from './ClearConfirmModal'
 import {
   PlayIcon, PauseIcon, StopIcon,
   UndoIcon, RedoIcon, TrashIcon, ScissorsIcon,
-  PlusCircleIcon,
 } from './icons'
-import { formatTimeMs } from '@/utils'
+import { formatTimeMs, formatTimeSec } from '@/utils'
 
 interface Props {
   isRecording:  boolean
@@ -45,6 +45,12 @@ interface Props {
   speed:        number
   onSpeedChange: (s: number) => void
   onSeek:       (ms: number) => void
+  hasClipboard: boolean
+  clipActions:  ClipMenuActions
+  onMoveClip:   (clipId: string, slot: number) => void
+  // Identity used to reset the timeline's locked px/ms when the user loads
+  // a different recording or clears the working draft.
+  sessionKey?:  string
 }
 
 const PANEL_STYLES = `
@@ -75,6 +81,7 @@ export default function RecorderPanel({
   onExportMidi, onExportXml, onExportPdf,
   liveRecordMs, busyExport, playbackMs,
   speed, onSpeedChange, onSeek,
+  hasClipboard, clipActions, onMoveClip, sessionKey,
 }: Props): React.JSX.Element {
   const { t } = useLanguage()
   const hasRecording = snapshot.notes.length > 0 && snapshot.durationMs > 0
@@ -92,62 +99,52 @@ export default function RecorderPanel({
 
         <div className="p-5 md:p-6 flex flex-col gap-5">
 
-          {/* ── Row 1 — Record + meta + transport (always visible) ───── */}
-          <div className="flex flex-wrap items-center gap-4">
-            <RecordPill
-              isRecording={isRecording}
-              disabled={isPlaying}
-              onClick={isRecording ? onStop : onRecord}
-              recordLabel={t('freeRecord')}
-              stopLabel={t('freeStop')}
-              reRecordLabel={t('freeRecordAgain')}
-              hasRecording={hasRecording}
-            />
-
-            {hasRecording && !isRecording && (
-              <button
-                onClick={onContinue}
+          {/* ── Top transport row — Canva-style:                          ─
+              left:   New / Record (+ Continue when there's a take)
+              centre: Play, then 0:00 / total
+              right:  Export menu (only when there's a take)
+          */}
+          <div className="grid grid-cols-3 items-center gap-3">
+            <div className="flex items-center gap-2 flex-wrap justify-self-start">
+              <RecordPill
+                isRecording={isRecording}
                 disabled={isPlaying}
-                className="flex items-center gap-2 px-4 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white text-sm font-semibold shadow-md shadow-amber-500/25 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all"
-                title={t('freeContinueHint')}
-              >
-                <PlusCircleIcon className="w-4 h-4" />
-                <span>{t('freeContinue')}</span>
-              </button>
-            )}
-
-            {/* Live recording read-out.  Only shown WHILE recording — when
-                there's already a take, the trim range below already shows
-                its duration, so the big timer here is just noise. */}
-            {isRecording && (
-              <MetaInline
-                ms={liveRecordMs}
-                notesCount={snapshot.notes.length}
-                notesLabel={t('freeNotes').toLowerCase()}
+                onClick={isRecording ? onStop : onRecord}
+                recordLabel={t('freeRecord')}
+                stopLabel={t('freeStop')}
+                reRecordLabel={t('freeRecordAgain')}
+                hasRecording={hasRecording}
               />
-            )}
+            </div>
 
-            <div className="flex-1" />
+            <div className="justify-self-center flex items-center gap-3">
+              {isRecording ? (
+                <MetaInline
+                  ms={liveRecordMs}
+                  notesCount={snapshot.notes.length}
+                  notesLabel={t('freeNotes').toLowerCase()}
+                />
+              ) : hasRecording ? (
+                <TransportCenter
+                  isPlaying={isPlaying}
+                  onPlay={onPlay}
+                  onPlayStop={onPlayStop}
+                  playLabel={t('freePlay')}
+                  pauseLabel={t('freePause')}
+                  currentMs={playbackMs}
+                  totalMs={snapshot.durationMs}
+                />
+              ) : null}
+            </div>
 
-            {hasRecording && !isRecording && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={isPlaying ? onPlayStop : onPlay}
-                  className="flex items-center gap-2 px-4 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-sm font-semibold shadow-md shadow-emerald-500/25 active:scale-[0.97] transition-all"
-                >
-                  {isPlaying ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
-                  <span>{isPlaying ? t('freePause') : t('freePlay')}</span>
-                </button>
-                <SpeedControl speed={speed} onChange={onSpeedChange} />
-                <IconBtnOnly icon={<UndoIcon  className="w-4 h-4" />} onClick={onUndo}  disabled={!canUndo} title={t('freeUndo')} />
-                <IconBtnOnly icon={<RedoIcon  className="w-4 h-4" />} onClick={onRedo}  disabled={!canRedo} title={t('freeRedo')} />
-                <IconBtnOnly icon={<TrashIcon className="w-4 h-4" />} onClick={() => setConfirmingClear(true)} title={t('freeClearHint')} variant="danger" />
+            <div className="justify-self-end">
+              {hasRecording && !isRecording && (
                 <ExportMenu
                   onMidi={onExportMidi} onXml={onExportXml} onPdf={onExportPdf}
                   busy={busyExport} disabled={busyExport !== null}
                 />
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* ── State hint (idle / recording) ─────────────────────────── */}
@@ -189,8 +186,17 @@ export default function RecorderPanel({
               </div>
 
               <div className="flex flex-col gap-2">
-                <SectionLabel icon={<ScissorsIcon className="w-3.5 h-3.5" />} text={t('freeTrimRange')} />
+                <div className="flex items-center justify-between gap-3">
+                  <SectionLabel icon={<ScissorsIcon className="w-3.5 h-3.5" />} text={t('freeTrimRange')} />
+                  <div className="flex items-center gap-2">
+                    <SpeedControl speed={speed} onChange={onSpeedChange} />
+                    <IconBtnOnly icon={<UndoIcon  className="w-4 h-4" />} onClick={onUndo}  disabled={!canUndo} title={t('freeUndo')} />
+                    <IconBtnOnly icon={<RedoIcon  className="w-4 h-4" />} onClick={onRedo}  disabled={!canRedo} title={t('freeRedo')} />
+                    <IconBtnOnly icon={<TrashIcon className="w-4 h-4" />} onClick={() => setConfirmingClear(true)} title={t('freeClearHint')} variant="danger" />
+                  </div>
+                </div>
                 <TrimRange
+                  key={sessionKey ?? 'none'}
                   min={0}
                   max={snapshot.durationMs}
                   startMs={draftStartMs}
@@ -204,12 +210,52 @@ export default function RecorderPanel({
                   playbackMs={playbackMs}
                   playbackActive={isPlaying}
                   onSeek={onSeek}
+                  clips={snapshot.clips}
+                  hasClipboard={hasClipboard}
+                  snapshotForMenu={snapshot}
+                  clipActions={clipActions}
+                  onAddSegment={onContinue}
+                  addSegmentLabel={t('freeContinueHint')}
+                  onMoveClip={onMoveClip}
                 />
               </div>
             </div>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// Canva-style centered transport — large play/pause button flanked by
+// current and total time.  Sits in the middle column of the top row.
+function TransportCenter({
+  isPlaying, onPlay, onPlayStop, playLabel, pauseLabel, currentMs, totalMs,
+}: {
+  isPlaying: boolean
+  onPlay:    () => void
+  onPlayStop:() => void
+  playLabel: string
+  pauseLabel:string
+  currentMs: number
+  totalMs:   number
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="font-mono tabular-nums text-sm text-slate-600 dark:text-slate-300 min-w-[2.5rem] text-right">
+        {formatTimeSec(currentMs / 1000)}
+      </span>
+      <button
+        onClick={isPlaying ? onPlayStop : onPlay}
+        title={isPlaying ? pauseLabel : playLabel}
+        aria-label={isPlaying ? pauseLabel : playLabel}
+        className="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-md shadow-emerald-500/30 flex items-center justify-center active:scale-[0.94] transition-all"
+      >
+        {isPlaying ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5 translate-x-[1px]" />}
+      </button>
+      <span className="font-mono tabular-nums text-sm text-slate-500 dark:text-slate-400 min-w-[2.5rem] text-left">
+        {formatTimeSec(totalMs / 1000)}
+      </span>
     </div>
   )
 }

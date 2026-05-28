@@ -1,178 +1,88 @@
-// Recording capture + trim-edit undo/redo for Free Mode.
-//
-// Listens to MidiContext (real piano) and the on-screen keyboard via a
-// returned `playInput` callback.  Computer-keyboard fallback piggy-backs on
-// the same shared listener that PracticePage uses — wired in FreeModePage.
-//
-// History scope: trim-start / trim-end commits only.  Stop-record and clear
-// REPLACE the snapshot without history (each is its own "session boundary"),
-// so Undo right after Stop won't wipe the take, and Undo after Clear isn't
-// meaningful since the cleared recording is preserved in the library anyway.
+// Capture-only recorder for Free Mode.  Listens to MidiContext + the
+// keyboard / on-screen inputs (via playInput) and accumulates RecordedNotes.
+// Knows nothing about clip editing, undo/redo or the library — those live in
+// useEditor / useFreeMode.  On stop it emits a CaptureResult; the consumer
+// decides whether to replace the current state with a fresh take or extend
+// an existing one.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMidi } from '@/context'
 import { audioEngine } from '@/audio'
 import type { FreeSnapshot, RecordedNote } from './types'
 
-const EMPTY: FreeSnapshot = {
-  notes: [], durationMs: 0, trimStartMs: 0, trimEndMs: 0,
+export interface CaptureResult {
+  notes:       RecordedNote[]
+  durationMs:  number
+  // True when the take was started with continueRecord, so the consumer
+  // should preserve the prior trim / clips / etc. and only append the new
+  // tail.  baseAtStart carries the snapshot the consumer was on when the
+  // user pressed Continue (or null for a fresh take).
+  continued:   boolean
+  baseAtStart: FreeSnapshot | null
+  hadNotes:    boolean
 }
 
 export interface RecorderApi {
-  // State
-  isRecording:  boolean
-  snapshot:     FreeSnapshot
-  canUndo:      boolean
-  canRedo:      boolean
-  // Capture
+  isRecording:    boolean
   startRecord:    () => void
-  // Append onto the existing recording: keeps current notes intact and lines
-  // up the timer so the next keypress lands just after `durationMs`.
   continueRecord: () => void
   stopRecord:     () => void
-  clear:          () => void
-  // Drives the keyboard's live-feedback colours during recording / preview.
-  playInput:    (midi: number, velocity: number, on: boolean) => void
-  // Trim editing (history-tracked on commit)
-  setTrimStart: (ms: number) => void
-  setTrimEnd:   (ms: number) => void
-  // History
-  undo: () => void
-  redo: () => void
-  // Replace the working draft from an external source (e.g. library load).
-  // Resets history stacks; does NOT fire onAfterStop.
-  replaceSnapshot: (snap: FreeSnapshot) => void
+  playInput:      (midi: number, velocity: number, on: boolean) => void
 }
 
 interface Options {
-  // Fires immediately after a recording is stopped, with the just-captured
-  // snapshot.  hadNotes is false when nothing was actually played.
-  // continued = the take was started via continueRecord (extends an existing
-  // library entry); false = fresh take that should land as a new entry.
-  onAfterStop?: (snap: FreeSnapshot, hadNotes: boolean, continued: boolean) => void
-  // Fires when the working draft is wiped via clear().
-  onAfterClear?: () => void
+  // Reader for the current editor snapshot.  Pulled as a function so the
+  // recorder never re-binds when the snapshot changes — avoids a stale-snap
+  // problem when the user holds Continue while editing.
+  readSnapshot: () => FreeSnapshot
+  onStop:       (result: CaptureResult) => void
 }
 
-export function useRecorder(opts: Options = {}): RecorderApi {
-  const { onAfterStop, onAfterClear } = opts
-
-  const [snapshot,    setSnapshot]    = useState<FreeSnapshot>(EMPTY)
+export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
   const [isRecording, setIsRecording] = useState(false)
 
-  const pastRef   = useRef<FreeSnapshot[]>([])
-  const futureRef = useRef<FreeSnapshot[]>([])
-  // The "clean" baseline — set by stopRecord and replaceSnapshot.  When the
-  // user trims and then returns to the baseline values, history is wiped so
-  // Undo / Redo go inactive instead of staying lit at a no-op state.
-  const baselineRef = useRef<FreeSnapshot | null>(null)
-  const [, forceHistoryVersion] = useState(0)
-  const bumpHistory = useCallback(() => forceHistoryVersion(v => v + 1), [])
-
-  // Two snapshots match for the purposes of "are we at the baseline" when the
-  // trim window is identical.  Notes / durationMs are immutable for the life
-  // of a take, so trim is the only axis that ever changes.
-  const matchesBaseline = (s: FreeSnapshot): boolean => {
-    const b = baselineRef.current
-    return !!b
-        && b.notes === s.notes
-        && b.trimStartMs === s.trimStartMs
-        && b.trimEndMs   === s.trimEndMs
-  }
-
-  // Mid-recording state in refs so MIDI listener closures stay fresh.
-  const recStartRef = useRef<number>(0)
-  const openRef     = useRef<Map<number, RecordedNote>>(new Map())
-  const liveNotes   = useRef<RecordedNote[]>([])
   const isRecordingRef = useRef(false)
-  const idRef = useRef(0)
-  // Tracks whether the current take is an extension (continueRecord) or a
-  // fresh start (startRecord) — read by stopRecord so the page can decide
-  // whether to update the existing library entry or create a new one.
-  const continuedRef = useRef(false)
-
   useEffect(() => { isRecordingRef.current = isRecording }, [isRecording])
 
-  // ─── Trim history (the only thing undo/redo affects) ──────────────────
-  const commit = useCallback((next: FreeSnapshot) => {
-    pastRef.current.push(snapshot)
-    futureRef.current = []
-    setSnapshot(next)
-    // If the user just edited back to the recording's baseline (e.g. dragged
-    // a trim handle and then returned it to its original position), the
-    // undo/redo stack would technically have entries but executing them
-    // would feel pointless.  Wipe the stack so Undo/Redo grey out.
-    if (matchesBaseline(next)) {
-      pastRef.current   = []
-      futureRef.current = []
-    }
-    bumpHistory()
-  }, [snapshot, bumpHistory])
+  const recStartRef   = useRef(0)
+  const idRef         = useRef(0)
+  const openRef       = useRef<Map<number, RecordedNote>>(new Map())
+  const liveNotes     = useRef<RecordedNote[]>([])
+  const continuedRef  = useRef(false)
+  const baseAtStartRef = useRef<FreeSnapshot | null>(null)
 
-  const undo = useCallback(() => {
-    const prev = pastRef.current.pop()
-    if (!prev) return
-    futureRef.current.push(snapshot)
-    setSnapshot(prev)
-    if (matchesBaseline(prev)) {
-      // Reached the baseline via Undo — same logic as above.  Drop the
-      // remaining history so we don't have a "Redo that does nothing" trap.
-      pastRef.current   = []
-      futureRef.current = []
-    }
-    bumpHistory()
-  }, [snapshot, bumpHistory])
-
-  const redo = useCallback(() => {
-    const next = futureRef.current.pop()
-    if (!next) return
-    pastRef.current.push(snapshot)
-    setSnapshot(next)
-    if (matchesBaseline(next)) {
-      pastRef.current   = []
-      futureRef.current = []
-    }
-    bumpHistory()
-  }, [snapshot, bumpHistory])
-
-  // ─── Capture ─────────────────────────────────────────────────────────
+  // ── start / continue / stop ───────────────────────────────────────────
   const startRecord = useCallback(() => {
     if (isRecordingRef.current) return
-    liveNotes.current = []
+    liveNotes.current      = []
     openRef.current.clear()
-    idRef.current = 0
-    recStartRef.current = performance.now()
+    idRef.current          = 0
+    recStartRef.current    = performance.now()
+    continuedRef.current   = false
+    baseAtStartRef.current = null
     isRecordingRef.current = true
-    continuedRef.current = false
     setIsRecording(true)
   }, [])
 
-  // Continue an existing take.  Existing notes are preserved at their
-  // recorded times; the clock is offset so `performance.now() - recStart`
-  // equals the take's current durationMs, and the first new keypress lands
-  // immediately after it.  Falls back to a fresh recording if there's
-  // nothing to continue from.
   const continueRecord = useCallback(() => {
     if (isRecordingRef.current) return
-    if (snapshot.notes.length === 0 || snapshot.durationMs === 0) {
-      // Nothing to continue — defer to the regular path.
-      liveNotes.current = []
-      openRef.current.clear()
-      idRef.current = 0
-      recStartRef.current = performance.now()
-      isRecordingRef.current = true
-      continuedRef.current = false
-      setIsRecording(true)
+    const base = readSnapshot()
+    if (base.notes.length === 0 || base.durationMs === 0) {
+      // Nothing meaningful to extend — fall through to a fresh take.
+      startRecord()
       return
     }
-    liveNotes.current = snapshot.notes.slice()
+    liveNotes.current      = base.notes.slice()
     openRef.current.clear()
-    idRef.current = snapshot.notes.length
-    recStartRef.current = performance.now() - snapshot.durationMs
+    idRef.current          = base.notes.length
+    // Offset the clock so `performance.now() - recStart` lines up with the
+    // existing duration — the next keypress lands just after `durationMs`.
+    recStartRef.current    = performance.now() - base.durationMs
+    continuedRef.current   = true
+    baseAtStartRef.current = base
     isRecordingRef.current = true
-    continuedRef.current = true
     setIsRecording(true)
-  }, [snapshot])
+  }, [readSnapshot, startRecord])
 
   const stopRecord = useCallback(() => {
     if (!isRecordingRef.current) return
@@ -189,36 +99,15 @@ export function useRecorder(opts: Options = {}): RecorderApi {
     const durationMs = notes.length === 0 ? 0
       : Math.max(...notes.map(n => n.endMs))
 
-    const next: FreeSnapshot = { notes, durationMs, trimStartMs: 0, trimEndMs: durationMs }
-    pastRef.current   = []
-    futureRef.current = []
-    baselineRef.current = next
-    setSnapshot(next)
-    bumpHistory()
-    const wasContinuing = continuedRef.current
-    continuedRef.current = false
-    onAfterStop?.(next, notes.length > 0, wasContinuing)
-  }, [bumpHistory, onAfterStop])
+    const continued   = continuedRef.current
+    const baseAtStart = baseAtStartRef.current
+    continuedRef.current   = false
+    baseAtStartRef.current = null
 
-  const clear = useCallback(() => {
-    if (isRecordingRef.current) stopRecord()
-    pastRef.current   = []
-    futureRef.current = []
-    baselineRef.current = null
-    setSnapshot(EMPTY)
-    bumpHistory()
-    onAfterClear?.()
-  }, [stopRecord, bumpHistory, onAfterClear])
+    onStop({ notes, durationMs, continued, baseAtStart, hadNotes: notes.length > 0 })
+  }, [onStop])
 
-  const replaceSnapshot = useCallback((snap: FreeSnapshot) => {
-    pastRef.current   = []
-    futureRef.current = []
-    baselineRef.current = snap
-    setSnapshot(snap)
-    bumpHistory()
-  }, [bumpHistory])
-
-  // ─── Input ───────────────────────────────────────────────────────────
+  // ── input ─────────────────────────────────────────────────────────────
   const playInput = useCallback((midi: number, velocity: number, on: boolean) => {
     if (on) audioEngine.noteOn(midi, velocity)
     else    audioEngine.noteOff(midi)
@@ -230,13 +119,17 @@ export function useRecorder(opts: Options = {}): RecorderApi {
       const prior = openRef.current.get(midi)
       if (prior) { prior.endMs = t; openRef.current.delete(midi) }
       const note: RecordedNote = {
-        id: `r${idRef.current++}`, midi, velocity, startMs: t, endMs: t,
+        id:       `r${idRef.current++}`,
+        midi, velocity,
+        startMs:  t,
+        endMs:    t,
       }
       openRef.current.set(midi, note)
       liveNotes.current.push(note)
     } else {
       const note = openRef.current.get(midi)
       if (note) {
+        // Floor the note's length so a flicker-tap still draws as a bar.
         note.endMs = Math.max(note.startMs + 30, t)
         openRef.current.delete(midi)
       }
@@ -244,30 +137,7 @@ export function useRecorder(opts: Options = {}): RecorderApi {
   }, [])
 
   const { subscribe } = useMidi()
-  useEffect(() => subscribe((midi, vel, on) => playInput(midi, vel, on)), [subscribe, playInput])
+  useEffect(() => subscribe(playInput), [subscribe, playInput])
 
-  // ─── Trim edits ──────────────────────────────────────────────────────
-  const setTrimStart = useCallback((ms: number) => {
-    const clamped = Math.max(0, Math.min(ms, snapshot.trimEndMs - 50))
-    if (clamped === snapshot.trimStartMs) return
-    commit({ ...snapshot, trimStartMs: clamped })
-  }, [snapshot, commit])
-
-  const setTrimEnd = useCallback((ms: number) => {
-    const clamped = Math.min(snapshot.durationMs, Math.max(ms, snapshot.trimStartMs + 50))
-    if (clamped === snapshot.trimEndMs) return
-    commit({ ...snapshot, trimEndMs: clamped })
-  }, [snapshot, commit])
-
-  return {
-    isRecording,
-    snapshot,
-    canUndo: pastRef.current.length > 0,
-    canRedo: futureRef.current.length > 0,
-    startRecord, continueRecord, stopRecord, clear,
-    playInput,
-    setTrimStart, setTrimEnd,
-    undo, redo,
-    replaceSnapshot,
-  }
+  return { isRecording, startRecord, continueRecord, stopRecord, playInput }
 }

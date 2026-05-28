@@ -12,6 +12,7 @@ function createWindow(): void {
     minHeight: 620,
     show: false,
     backgroundColor: '#0a0f1e',
+    icon: join(__dirname, '../../resources/icon.png'),
     // Use native titlebar — avoids overlap with window controls
     titleBarStyle: 'default',
     webPreferences: {

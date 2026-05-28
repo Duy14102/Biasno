@@ -15,7 +15,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { audioEngine } from '@/audio'
-import type { FreeSnapshot } from './types'
+import type { Clip, FreeSnapshot } from './types'
+import { chunkEndAt, effectiveClips } from './clipOps'
 
 interface Args {
   snapshot: FreeSnapshot
@@ -72,19 +73,71 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
     // Where to start.  Use the parked playhead unless it's at/past the end
     // of the trim — in that case rewind to trim start so Play feels alive.
     const headNow = headMsRef.current
-    const fromMs = (headNow >= region.start && headNow < region.end - END_EPS_MS)
+    let fromMs = (headNow >= region.start && headNow < region.end - END_EPS_MS)
       ? headNow
       : region.start
 
-    // Only schedule notes whose ONSET is at or after `fromMs` (and within
-    // the trim).  We deliberately don't re-attack notes that began before
-    // fromMs — seeking past a note's attack should leave that note silent,
-    // exactly like seeking past a hit in a DAW.  This is what fixes the
-    // "old recording's last note still rings when I start a Continue take"
-    // bug the user reported.
-    const scheduled = snapshot.notes
-      .filter(n => n.startMs >= fromMs && n.startMs < region.end)
+    // Clips define the playable sub-regions inside [trim].  A note plays
+    // only if its onset falls inside SOME clip past fromMs; the clip's
+    // volume scales the note velocity.  Empty clips[] → effectiveClips
+    // returns the implicit "whole trim" clip so this is a no-op in the
+    // default state.
+    const clips = effectiveClips(snapshot)
+    // Reverse iteration so a note onset on a split-touching boundary
+    // belongs to the RIGHT clip (where it has audible duration) rather
+    // than the LEFT (where its audible window would clamp to 0 ms).
+    const containingClip = (startMs: number): Clip | null => {
+      for (let i = clips.length - 1; i >= 0; i--) {
+        const c = clips[i]
+        if (startMs >= c.startMs && startMs <= c.endMs) return c
+      }
+      return null
+    }
+    // Include notes that overlap [from, region.end), not just those that
+    // START past `from`.  A note whose onset is before the playhead but
+    // whose audible tail extends past it is still sounding — the user
+    // expects it to keep playing when they hit Play in the middle of it.
+    const filterScheduled = (from: number) => snapshot.notes
+      .filter(n => n.startMs < region.end && (n.startMs >= from || n.endMs > from))
+      .map(n => ({ note: n, clip: containingClip(n.startMs) }))
+      .filter((p): p is { note: typeof snapshot.notes[number]; clip: Clip } => p.clip !== null)
+
+    let scheduled = filterScheduled(fromMs)
+    // Playhead parked in a silent stretch (gap between clips, or past the
+    // last note) — auto-rewind to trim start so Play still does something.
+    if (scheduled.length === 0 && fromMs !== region.start) {
+      fromMs = region.start
+      scheduled = filterScheduled(fromMs)
+      setHeadMs(fromMs)
+    }
     if (scheduled.length === 0) return
+
+    // Merge adjacent same-pitch notes into one audio event.  Two independent
+    // pastes of the same pitch can end up touching at a clip boundary (e.g.
+    // user copies clip X and clip Y, drags them adjacent — X's last note and
+    // Y's first note are both the same pitch and meet at the seam).  Without
+    // this merge, the engine releases the first note's tail and re-attacks
+    // the second, producing an audible "click" / re-articulation where A|B|C
+    // (a split recording) plays one continuous tone via chunkEndAt.
+    //
+    // Only merge when the two clips share the same volume — otherwise the
+    // user's per-clip volume change would be lost (the merged event plays at
+    // the first clip's volume across the whole chain).  Volume divergence
+    // means the user wants distinct dynamics, so a small re-attack click is
+    // the right trade-off.
+    const TOUCH_TOLERANCE_MS = 5
+    const merged: typeof scheduled = []
+    for (const item of scheduled) {
+      const last = merged[merged.length - 1]
+      if (last && last.note.midi === item.note.midi
+          && item.note.startMs - last.note.endMs <= TOUCH_TOLERANCE_MS
+          && last.clip.volume === item.clip.volume) {
+        last.note = { ...last.note, endMs: Math.max(last.note.endMs, item.note.endMs) }
+      } else {
+        merged.push({ note: item.note, clip: item.clip })
+      }
+    }
+    scheduled = merged
 
     // Defensive: another page (e.g. PracticePage) may have left the master
     // gain at 0 via stopAll().  Restore before scheduling so the very first
@@ -97,13 +150,21 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
     playStartAcRef.current = ac
     headOffsetRef.current  = fromMs
 
-    for (const n of scheduled) {
-      const noteEnd   = Math.min(n.endMs, region.end)
-      const offsetSec = (n.startMs - fromMs) / 1000 / sp
-      const dur       = Math.max(0.05, (noteEnd - n.startMs) / 1000 / sp)
+    for (const { note: n, clip: c } of scheduled) {
+      // Audible end extends through every touching clip past the onset
+      // clip — matches peaks.ts so split (touching) preserves audio.
+      const chunkEnd  = chunkEndAt(clips, n.startMs) ?? c.endMs
+      const noteEnd   = Math.min(n.endMs, chunkEnd, region.end)
+      // Notes whose onset is before the playhead start playing from `fromMs`
+      // (we accept the lost attack envelope — better mid-sustain than silent).
+      const playStart = Math.max(n.startMs, fromMs)
+      if (noteEnd <= playStart) continue
+      const offsetSec = (playStart - fromMs) / 1000 / sp
+      const dur       = Math.max(0.05, (noteEnd - playStart) / 1000 / sp)
+      const vel       = Math.max(0, Math.min(1, n.velocity * c.volume))
       // tail=0.05 (50 ms) keeps the note from clicking off but doesn't let
       // it ring far past its written end — so a "silent gap" stays silent.
-      audioEngine.noteAtTime(n.midi, ac + offsetSec, dur, n.velocity, 0.05)
+      audioEngine.noteAtTime(n.midi, ac + offsetSec, dur, vel, 0.05)
     }
 
     isPlayingRef.current = true
@@ -117,7 +178,7 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
 
       if (onActive) {
         const live = new Set<number>()
-        for (const n of scheduled) {
+        for (const { note: n } of scheduled) {
           if (n.startMs <= ms && n.endMs > ms) live.add(n.midi)
         }
         onActive(live)

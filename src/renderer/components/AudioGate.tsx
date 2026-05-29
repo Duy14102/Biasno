@@ -27,8 +27,17 @@ async function preloadPersistedSheets(): Promise<void> {
 // Gate the entire app behind audio sample loading + sheet preloading so the
 // home page is fully ready (no per-row loading bars) the moment the splash
 // unmounts.  Both run in parallel; the splash waits on the slower of the two.
+//
+// Cross-fade strategy: once preload finishes, children mount IMMEDIATELY but
+// the splash stays painted on top for one frame to let HomePage do its first
+// render + paint underneath.  The splash then fades to opacity 0 over ~400ms
+// and unmounts.  The user never sees the per-frame stutter of the initial
+// HomePage mount because it happens behind the fully-opaque splash.
+const SPLASH_FADE_MS = 420
 export function AudioGate({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(audioEngine.ready)
+  const [ready,         setReady]         = useState(audioEngine.ready)
+  const [splashMounted, setSplashMounted] = useState(!audioEngine.ready)
+  const [splashOpaque,  setSplashOpaque]  = useState(!audioEngine.ready)
   const { t } = useLanguage()
 
   useEffect(() => {
@@ -37,11 +46,52 @@ export function AudioGate({ children }: { children: React.ReactNode }) {
     Promise.allSettled([audio, sheets]).finally(() => setReady(true))
   }, [])
 
-  if (ready) return <>{children}</>
+  // Drive the cross-fade once preload is done.  Two rAFs: the first lets
+  // React commit the children render and the browser paint it underneath;
+  // the second flips opacity so the transition fires from 1 → 0.  Flipping
+  // opacity also adds the `splash-frozen` class, which kills every infinite
+  // CSS animation inside the splash — no compositor work during the fade.
+  // The final unmount is deferred to `requestIdleCallback` so the DOM-removal
+  // recalc happens during a quiet frame, never on the last fade frame.
+  useEffect(() => {
+    if (!ready || !splashMounted) return
+    let raf2 = 0
+    let idleId = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setSplashOpaque(false))
+    })
+    const tm = window.setTimeout(() => {
+      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback
+      if (ric) idleId = ric(() => setSplashMounted(false), { timeout: 200 })
+      else setSplashMounted(false)
+    }, SPLASH_FADE_MS + 60)
+    return () => {
+      cancelAnimationFrame(raf1)
+      if (raf2) cancelAnimationFrame(raf2)
+      window.clearTimeout(tm)
+      const cic = (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback
+      if (idleId && cic) cic(idleId)
+    }
+  }, [ready, splashMounted])
 
   return (
-    <div className="relative flex flex-col items-center justify-center h-screen bg-slate-200 dark:bg-slate-950 text-slate-900 dark:text-white overflow-hidden">
-      <style>{SPLASH_CSS}</style>
+    <>
+      {ready && children}
+      {splashMounted && (
+        <div
+          aria-hidden={!splashOpaque}
+          className={[
+            'fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-200 dark:bg-slate-950 text-slate-900 dark:text-white overflow-hidden',
+            splashOpaque ? '' : 'splash-frozen',
+          ].join(' ')}
+          style={{
+            opacity:       splashOpaque ? 1 : 0,
+            pointerEvents: splashOpaque ? 'auto' : 'none',
+            transition:    `opacity ${SPLASH_FADE_MS}ms ease-out`,
+            willChange:    'opacity',
+          }}
+        >
+          <style>{SPLASH_CSS}</style>
 
       {/* Drifting gradient orbs — same palette as HomePage for visual continuity. */}
       <div
@@ -91,7 +141,9 @@ export function AudioGate({ children }: { children: React.ReactNode }) {
           <p className="text-xs text-slate-500 dark:text-slate-400">{t('splashHint')}</p>
         </div>
       </div>
-    </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -139,4 +191,9 @@ const SPLASH_CSS = `
   animation: splash-shimmer 2.4s linear infinite;
 }
 .splash-dots::after { content: ''; animation: splash-dots 1.2s steps(1, end) infinite; }
+/* While fading out, freeze every inner animation so the compositor isn't
+   doing per-frame work on an invisible element.  Halves stutter on slower
+   machines and removes the "last-frame hiccup" that lands when the splash
+   unmounts. */
+.splash-frozen, .splash-frozen *, .splash-frozen *::after { animation: none !important; }
 `

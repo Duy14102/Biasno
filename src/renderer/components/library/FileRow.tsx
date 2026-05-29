@@ -1,31 +1,37 @@
 import React from 'react'
 import type { FileEntry } from '@/context'
 import { MusicBars, FolderIcon, ImportIcon, TrashIcon } from './icons'
+import { highlightMatch } from './highlightMatch'
 import { useLanguage } from '@/i18n'
 import { formatTimeSec } from '@/utils'
 
 const formatDur = (s?: number): string => (s ? formatTimeSec(s) : '')
 
 interface Props {
-  entry:        FileEntry
-  isLoading:    boolean
-  isHovered:    boolean
-  onHoverChange: (hovered: boolean) => void
-  onClick:      () => void
-  onDelete:     () => void
+  entry:              FileEntry
+  isLoading:          boolean
+  isHovered:          boolean
+  currentFolderPath?: string | null
+  query?:             string
+  onHoverChange:      (hovered: boolean) => void
+  onClick:            () => void
+  onDelete:           () => void
 }
 
-/** One row in the library file list.  Layout is a single fixed-height line so
- *  the list never reflows when an entry switches into / out of loading. */
+/** One row in the library file list.  Fixed height (FILE_ROW_HEIGHT) so the
+ *  virtualized list can window with pure arithmetic and never reflows when an
+ *  entry switches into / out of loading. */
 export default function FileRow({
-  entry, isLoading, isHovered, onHoverChange, onClick, onDelete,
+  entry, isLoading, isHovered, currentFolderPath, query = '', onHoverChange, onClick, onDelete,
 }: Props): React.JSX.Element {
   const { t } = useLanguage()
   const isFolder = entry.source === 'folder'
+  const showFolderPath = isFolder && !!entry.folderPath
+  const isInCurrentFolder = showFolderPath && entry.folderPath === currentFolderPath
   return (
     <div
       className={[
-        'group px-4 py-2.5 cursor-pointer transition-colors duration-100 border-l-2 relative overflow-hidden',
+        'group h-14 px-4 flex items-center cursor-pointer transition-colors duration-100 border-l-2 relative overflow-hidden',
         isLoading
           ? 'bg-blue-100 border-blue-500 dark:bg-blue-900/25'
           : isHovered
@@ -36,7 +42,7 @@ export default function FileRow({
       onMouseLeave={() => onHoverChange(false)}
       onClick={() => !isLoading && onClick()}
     >
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0 w-full">
         {/* Leading icon: spinner / hover-bars / source-tagged glyph. */}
         <div
           className={[
@@ -54,10 +60,26 @@ export default function FileRow({
               : (isFolder ? <FolderIcon /> : <ImportIcon />)}
         </div>
 
-        {/* Name */}
-        <span className="flex-1 text-sm text-slate-800 dark:text-slate-200 truncate font-medium min-w-0">
-          {entry.name}
-        </span>
+        {/* Name + (folder source) path subtitle */}
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-slate-800 dark:text-slate-200 truncate font-medium">
+            {highlightMatch(entry.name, query)}
+          </div>
+          {showFolderPath && (
+            <div
+              className={[
+                'flex items-center gap-1 text-[11px] leading-tight mt-0.5 min-w-0',
+                isInCurrentFolder
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-500 dark:text-slate-400',
+              ].join(' ')}
+              title={entry.folderPath!}
+            >
+              <FolderIcon className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate font-mono">{highlightMatch(entry.folderPath!, query)}</span>
+            </div>
+          )}
+        </div>
 
         {/* Right-side meta: duration / "Đang tải" / delete trash. */}
         {isLoading ? (

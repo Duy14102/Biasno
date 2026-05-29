@@ -28,7 +28,7 @@ export default function DeleteConfirmModal({ entry, onCancel, onConfirm }: Props
       {isFolder ? (
         <>
           <p>
-            {t('folderEntryDescA')}<span className="text-amber-700 dark:text-amber-300 font-medium">{t('folderEntryDescB')}</span>{t('folderEntryDescC')}
+            {t('folderEntryDescA')}<span className="text-amber-700 dark:text-amber-300 font-medium break-all">{entry.folderPath || t('folderEntryDescB')}</span>{t('folderEntryDescC')}
           </p>
           <p className="mt-2 text-xs text-slate-500">
             {t('folderRescanNote')}

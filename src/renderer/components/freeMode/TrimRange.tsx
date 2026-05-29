@@ -49,6 +49,7 @@ interface Props {
   onAddSegment?:    () => void
   addSegmentLabel?: string
   onMoveClip?:      (clipId: string, slot: number) => void
+  showMeasureLines?: boolean
 }
 
 export default function TrimRange({
@@ -59,6 +60,7 @@ export default function TrimRange({
   clips, hasClipboard, snapshotForMenu, clipActions,
   onAddSegment, addSegmentLabel,
   onMoveClip,
+  showMeasureLines = false,
 }: Props): React.JSX.Element {
   const range   = Math.max(1, max - min)
   const startPct = ((startMs - min) / range) * 100
@@ -133,6 +135,20 @@ export default function TrimRange({
       setSelectedClipId(null)
     }
   }, [effClips, selectedClipId])
+
+  // Clear the clip highlight when the user clicks anywhere outside the
+  // timeline track (e.g., focusing the file-name / author input).
+  useEffect(() => {
+    if (selectedClipId === null) return
+    const onPointerDown = (e: PointerEvent) => {
+      const track = trackRef.current
+      if (!track) return
+      if (e.target instanceof Node && track.contains(e.target)) return
+      setSelectedClipId(null)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [selectedClipId])
 
   const msAtClientX = useCallback((clientX: number): number => {
     const el = trackRef.current
@@ -275,6 +291,7 @@ export default function TrimRange({
                 durationMs={max}
                 selectedClipId={selectedClipId}
                 onSeek={onSeek}
+                showMeasureLines={showMeasureLines}
               />
 
               {/* Outside-trim dim */}

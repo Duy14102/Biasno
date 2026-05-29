@@ -1,0 +1,40 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build Electron app
+        run: npm run package
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Rename win-unpacked to Biasno
+        shell: pwsh
+        run: Rename-Item -Path release/win-unpacked -NewName Biasno
+
+      - name: Zip Biasno folder
+        shell: pwsh
+        run: Compress-Archive -Path release/Biasno -DestinationPath release/Biasno-${{ github.ref_name }}.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/Biasno-${{ github.ref_name }}.zip
+          generate_release_notes: true

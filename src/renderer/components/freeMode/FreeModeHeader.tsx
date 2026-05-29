@@ -2,15 +2,32 @@ import React from 'react'
 import { IconBtn } from '@/components/header'
 import { BackIcon } from '@/components/header'
 import { LibraryIcon } from './icons'
+import FreeModeSettings from './FreeModeSettings'
 import { useLanguage } from '@/i18n'
+import type { KeyCount } from '@/utils'
 
 interface Props {
   onBack:        () => void
   onOpenLibrary: () => void
   libraryCount:  number
+  keyCount:        KeyCount
+  keyCountLocked:  boolean
+  onKeyCountChange: (n: KeyCount) => void
+  countdownEnabled:  boolean
+  onCountdownToggle: () => void
+  metronomeEnabled:  boolean
+  onMetronomeToggle: () => void
+  measureLinesEnabled:  boolean
+  onMeasureLinesToggle: () => void
 }
 
-export default function FreeModeHeader({ onBack, onOpenLibrary, libraryCount }: Props): React.JSX.Element {
+export default function FreeModeHeader({
+  onBack, onOpenLibrary, libraryCount,
+  keyCount, keyCountLocked, onKeyCountChange,
+  countdownEnabled, onCountdownToggle,
+  metronomeEnabled, onMetronomeToggle,
+  measureLinesEnabled, onMeasureLinesToggle,
+}: Props): React.JSX.Element {
   const { t } = useLanguage()
   return (
     <header className="flex items-center gap-3 px-4 py-2.5 bg-white dark:bg-slate-900 dark:bg-gradient-to-b dark:from-slate-800 dark:to-slate-900 border-b border-slate-300 dark:border-slate-700/70 select-none shadow-sm">
@@ -48,6 +65,18 @@ export default function FreeModeHeader({ onBack, onOpenLibrary, libraryCount }: 
           </span>
         )}
       </button>
+
+      <FreeModeSettings
+        keyCount={keyCount}
+        keyCountLocked={keyCountLocked}
+        onKeyCountChange={onKeyCountChange}
+        countdownEnabled={countdownEnabled}
+        onCountdownToggle={onCountdownToggle}
+        metronomeEnabled={metronomeEnabled}
+        onMetronomeToggle={onMetronomeToggle}
+        measureLinesEnabled={measureLinesEnabled}
+        onMeasureLinesToggle={onMeasureLinesToggle}
+      />
     </header>
   )
 }

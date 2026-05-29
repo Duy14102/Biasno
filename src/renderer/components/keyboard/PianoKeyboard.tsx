@@ -2,6 +2,7 @@ import React, { useMemo, useCallback } from 'react'
 import {
   isBlackKey, getWhiteKeyIndex, getBlackKeyLeftWhite,
   PIANO_RANGES, type KeyCount,
+  handColorOf,
 } from '@/utils'
 import type { Hand } from '@/types'
 
@@ -73,21 +74,16 @@ interface PianoKeyboardProps {
   keyCount?: KeyCount  // 88 (default) | 76 | 61
 }
 
-const COLORS = {
-  rightHit:   '#4488ff',
-  leftHit:    '#ff8833',
-  unknownHit: '#88aacc',
-  correct:    '#44ee88',
-  wrong:      '#ff4455'
+const HIT_COLORS = {
+  correct: '#22c55e', // green-500 — universal "right note"
+  wrong:   '#ef4444', // red-500   — universal "wrong note"
 }
 
 function getKeyColor(midi: number, highlight: KeyHighlight | undefined): string {
   if (!highlight) return isBlackKey(midi) ? '#1a1614' : '#f5f0eb'
-  if (highlight.hitState === 'correct') return COLORS.correct
-  if (highlight.hitState === 'wrong')   return COLORS.wrong
-  if (highlight.hand === 'right')  return COLORS.rightHit
-  if (highlight.hand === 'left')   return COLORS.leftHit
-  return COLORS.unknownHit
+  if (highlight.hitState === 'correct') return HIT_COLORS.correct
+  if (highlight.hitState === 'wrong')   return HIT_COLORS.wrong
+  return handColorOf(midi, highlight.hand, isBlackKey(midi)).fill
 }
 
 export default function PianoKeyboard({

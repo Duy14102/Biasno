@@ -39,6 +39,11 @@ export const en: Translations = {
 
   songList:               'Song list',
   songsCount:             '{n} songs',
+  songsMatchCount:        '{n} of {total}',
+  searchPlaceholder:      'Search songs or folders…',
+  searchClear:            'Clear search',
+  noSearchResults:        'No songs match',
+  noSearchResultsHint:    'Try a different word or clear the search.',
   importFile:             '📂 Import file',
   chooseFolder:           '🗂 Choose folder',
   noSongsYet:             'No songs yet',
@@ -258,4 +263,10 @@ export const en: Translations = {
   clipMenuClear:           'Clear',
 
   keys:                    'keys',
+
+  freeSettingsKeyboardSize:  'Keyboard size',
+  freeSettingsCountdownHint: 'Show 3-2-1 before recording starts',
+  freeSettingsMetronomeHint: 'Audible click — never bleeds into the recording',
+  freeSettingsMeasureLines:  'Note lines',
+  freeSettingsMeasureHint:   'Horizontal pitch lines inside the clip editor',
 }

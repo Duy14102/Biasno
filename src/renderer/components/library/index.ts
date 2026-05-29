@@ -1,6 +1,8 @@
 export { default as DeleteConfirmModal }  from './DeleteConfirmModal'
 export { default as DevicePanel }         from './DevicePanel'
 export { default as FileRow }             from './FileRow'
+export { default as LibrarySearch }       from './LibrarySearch'
+export { default as VirtualFileList }     from './VirtualFileList'
 export { default as FolderConflictModal } from './FolderConflictModal'
 export { default as LeaderboardModal }    from './LeaderboardModal'
 export { default as MidiDevicePicker }    from './MidiDevicePicker'

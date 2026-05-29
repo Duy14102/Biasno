@@ -69,10 +69,13 @@ export default function ClipContextMenu({
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) onClose()
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('mousedown', onDown)
+    // Capture phase: clip mousedown handlers call stopPropagation(), which
+    // would otherwise prevent this listener from firing and leave the menu
+    // stuck open after a left-click on another clip.
+    window.addEventListener('mousedown', onDown, true)
     window.addEventListener('keydown',   onKey)
     return () => {
-      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('mousedown', onDown, true)
       window.removeEventListener('keydown',   onKey)
     }
   }, [onClose])

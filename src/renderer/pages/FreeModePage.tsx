@@ -16,12 +16,17 @@ import { RecorderPanel }  from '@/components/freeMode'
 import { LibraryModal }   from '@/components/freeMode'
 import { ClearConfirmModal } from '@/components/freeMode'
 import { PianoKeyboard }  from '@/components/keyboard'
+import { PlayIcon }       from '@/components/header'
 import { KEY_COUNTS, detectKeyCountFromName, type KeyCount } from '@/utils'
 import { KEYBOARD_HEIGHT } from '@/practice'
 import type { Hand } from '@/types'
 import type { FreeSnapshot } from '@/freeMode'
 
 const DEFAULT_BPM = 120
+
+const LS_COUNTDOWN     = 'freeCountdownEnabled'
+const LS_METRONOME     = 'freeMetronomeEnabled'
+const LS_MEASURE_LINES = 'freeMeasureLines'
 
 const KEY_MAP: Record<string, number> = {
   'z': 48, 's': 49, 'x': 50, 'd': 51, 'c': 52,
@@ -235,6 +240,84 @@ export default function FreeModePage(): React.JSX.Element {
   const keyCount: KeyCount = connectedId !== null
     ? detectKeyCountFromName(connectedDeviceName)
     : manualKeyCount
+  const handleKeyCountChange = useCallback((n: KeyCount) => {
+    setManualKeyCount(n)
+    localStorage.setItem('keyCount', String(n))
+  }, [])
+
+  // ─── Settings (persisted) ─────────────────────────────────────────
+  const [countdownEnabled, setCountdownEnabled] = useState<boolean>(
+    () => localStorage.getItem(LS_COUNTDOWN) === 'true',
+  )
+  const [metronomeEnabled, setMetronomeEnabled] = useState<boolean>(
+    () => localStorage.getItem(LS_METRONOME) === 'true',
+  )
+  const [measureLinesEnabled, setMeasureLinesEnabled] = useState<boolean>(
+    () => localStorage.getItem(LS_MEASURE_LINES) !== 'false', // default on
+  )
+
+  const handleCountdownToggle = useCallback(() => {
+    setCountdownEnabled((prev) => {
+      const next = !prev
+      localStorage.setItem(LS_COUNTDOWN, String(next))
+      return next
+    })
+  }, [])
+
+  const handleMetronomeToggle = useCallback(() => {
+    setMetronomeEnabled((prev) => {
+      const next = !prev
+      localStorage.setItem(LS_METRONOME, String(next))
+      if (next) audioEngine.startMetronome(DEFAULT_BPM, 4)
+      else      audioEngine.stopMetronome()
+      return next
+    })
+  }, [])
+
+  const handleMeasureLinesToggle = useCallback(() => {
+    setMeasureLinesEnabled((prev) => {
+      const next = !prev
+      localStorage.setItem(LS_MEASURE_LINES, String(next))
+      return next
+    })
+  }, [])
+
+  // ─── Countdown before recording ───────────────────────────────────
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const cancelCountdown = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = null
+    }
+    setCountdown(null)
+  }, [])
+
+  const beginRecordWithCountdown = useCallback((startFn: () => void) => {
+    if (!countdownEnabled) { startFn(); return }
+    cancelCountdown()
+    let n = 3
+    setCountdown(n)
+    countdownTimerRef.current = setInterval(() => {
+      n--
+      if (n > 0) {
+        setCountdown(n)
+      } else {
+        cancelCountdown()
+        startFn()
+      }
+    }, 1000)
+  }, [countdownEnabled, cancelCountdown])
+
+  const handleStartRecord  = useCallback(() => beginRecordWithCountdown(startRecord),    [beginRecordWithCountdown, startRecord])
+  const handleContinueRec  = useCallback(() => beginRecordWithCountdown(continueRecord), [beginRecordWithCountdown, continueRecord])
+
+  // Stop the metronome + any pending countdown on unmount so they don't leak
+  // off-page.
+  useEffect(() => () => {
+    audioEngine.stopMetronome()
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current)
+  }, [])
 
   // ─── Library actions ───────────────────────────────────────────────
   const handleLoad = useCallback((id: string) => {
@@ -327,6 +410,15 @@ export default function FreeModePage(): React.JSX.Element {
         onBack={handleBack}
         onOpenLibrary={() => setLibraryOpen(true)}
         libraryCount={entries.length}
+        keyCount={keyCount}
+        keyCountLocked={connectedId !== null}
+        onKeyCountChange={handleKeyCountChange}
+        countdownEnabled={countdownEnabled}
+        onCountdownToggle={handleCountdownToggle}
+        metronomeEnabled={metronomeEnabled}
+        onMetronomeToggle={handleMetronomeToggle}
+        measureLinesEnabled={measureLinesEnabled}
+        onMeasureLinesToggle={handleMeasureLinesToggle}
       />
 
       <RecorderPanel
@@ -339,8 +431,8 @@ export default function FreeModePage(): React.JSX.Element {
         setAuthor={setAuthor}
         canUndo={canUndo}
         canRedo={canRedo}
-        onRecord={startRecord}
-        onContinue={continueRecord}
+        onRecord={handleStartRecord}
+        onContinue={handleContinueRec}
         onStop={stopRecord}
         onPlay={playback.play}
         onPlayStop={playback.stop}
@@ -366,6 +458,7 @@ export default function FreeModePage(): React.JSX.Element {
         clipActions={clipActions}
         onMoveClip={moveClipTo}
         sessionKey={activeId ?? 'draft'}
+        showMeasureLines={measureLinesEnabled}
       />
 
       <div className="relative h-0 pointer-events-none select-none z-10">
@@ -384,18 +477,25 @@ export default function FreeModePage(): React.JSX.Element {
       <button
         onClick={() => {
           if (connectedId !== null) return
-          setManualKeyCount((prev) => {
-            const i = KEY_COUNTS.indexOf(prev)
-            const next = KEY_COUNTS[(i + 1) % KEY_COUNTS.length]
-            localStorage.setItem('keyCount', String(next))
-            return next
-          })
+          const i = KEY_COUNTS.indexOf(manualKeyCount)
+          handleKeyCountChange(KEY_COUNTS[(i + 1) % KEY_COUNTS.length])
         }}
         title={`${keyCount} ${t('keys')}`}
         className="fixed bottom-3 right-3 px-2 py-1 rounded-md bg-slate-800/70 hover:bg-slate-700/80 text-white text-[10px] font-mono backdrop-blur-sm"
       >
         {keyCount}
       </button>
+
+      {countdown !== null && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
+          <div
+            className="text-slate-900 dark:text-white font-bold select-none flex items-center justify-center"
+            style={{ fontSize: 120, lineHeight: 1, textShadow: '0 0 60px rgba(100,160,255,0.8), 0 0 20px rgba(100,160,255,0.5)' }}
+          >
+            {countdown > 0 ? countdown : <PlayIcon className="w-[110px] h-[110px]" />}
+          </div>
+        </div>
+      )}
 
       {libraryOpen && (
         <LibraryModal

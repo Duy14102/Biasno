@@ -51,6 +51,7 @@ interface Props {
   // Identity used to reset the timeline's locked px/ms when the user loads
   // a different recording or clears the working draft.
   sessionKey?:  string
+  showMeasureLines?: boolean
 }
 
 const PANEL_STYLES = `
@@ -81,7 +82,7 @@ export default function RecorderPanel({
   onExportMidi, onExportXml, onExportPdf,
   liveRecordMs, busyExport, playbackMs,
   speed, onSpeedChange, onSeek,
-  hasClipboard, clipActions, onMoveClip, sessionKey,
+  hasClipboard, clipActions, onMoveClip, sessionKey, showMeasureLines,
 }: Props): React.JSX.Element {
   const { t } = useLanguage()
   const hasRecording = snapshot.notes.length > 0 && snapshot.durationMs > 0
@@ -217,6 +218,7 @@ export default function RecorderPanel({
                   onAddSegment={onContinue}
                   addSegmentLabel={t('freeContinueHint')}
                   onMoveClip={onMoveClip}
+                  showMeasureLines={showMeasureLines}
                 />
               </div>
             </div>

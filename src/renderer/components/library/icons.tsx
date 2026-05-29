@@ -64,6 +64,16 @@ export function WarningIcon({ className = 'w-4 h-4' }: IconProps): React.JSX.Ele
   )
 }
 
+/** Magnifying-glass — leading icon on the library search input. */
+export function SearchIcon({ className = 'w-4 h-4' }: IconProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <circle cx="11" cy="11" r="7"/>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+  )
+}
+
 /** X glyph — close / dismiss / forget affordance. */
 export function CloseIcon({ className = 'w-3.5 h-3.5' }: IconProps): React.JSX.Element {
   return (

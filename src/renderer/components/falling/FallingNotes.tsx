@@ -4,6 +4,7 @@ import { useTheme } from '@/context'
 import {
   isBlackKey, getWhiteKeyIndex, getBlackKeyLeftWhite,
   PIANO_RANGES, type KeyCount, type PianoRange,
+  HAND_COLORS, handColorKey,
 } from '@/utils'
 
 const PX_PER_SECOND = 240
@@ -218,18 +219,15 @@ export default function FallingNotes({
       // 'holding' (key pressed but not yet confirmed) stays visible while player holds
       if (isHit && noteTopDelta <= 0.05) continue
 
-      // 4-color scheme: right white / right black / left white / left black
-      const NOTE_COLORS: Record<string, { normal: string; glow: string; hit: string; miss: string }> = {
-        'right-white': { normal: '#4A9EFF', glow: '#80C4FF', hit: '#44ee88', miss: '#ff4455' },
-        'right-black': { normal: '#1A6ECC', glow: '#3B99FF', hit: '#44ee88', miss: '#ff4455' },
-        'left-white':  { normal: '#FF8833', glow: '#FFAA66', hit: '#44ee88', miss: '#ff4455' },
-        'left-black':  { normal: '#CC4411', glow: '#FF6633', hit: '#44ee88', miss: '#ff4455' },
-        'unknown':     { normal: '#88AACC', glow: '#AACCEE', hit: '#44ee88', miss: '#ff4455' },
+      // Hand-colour swatch from the shared 4-colour palette.  hit / miss
+      // are universal green / red — independent of hand identity.
+      const swatch = HAND_COLORS[handColorKey(note.midi, note.hand, isBlack)]
+      const colors = {
+        normal: swatch.fill,
+        glow:   swatch.glow,
+        hit:    '#22c55e',
+        miss:   '#ef4444',
       }
-      const colorKey = note.hand === 'right' ? (isBlack ? 'right-black' : 'right-white')
-                     : note.hand === 'left'  ? (isBlack ? 'left-black'  : 'left-white')
-                     : 'unknown'
-      const colors = NOTE_COLORS[colorKey]
 
       // ── Geometric glow ────────────────────────────────────────────────────
       // In view-listen: glow when note head physically touches the hit line.

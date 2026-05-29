@@ -42,6 +42,11 @@ export const vi = {
   // ── Library list ────────────────────────────────────────────────────────
   songList:               'Danh sách bài',
   songsCount:             '{n} bài',
+  songsMatchCount:        '{n} / {total}',
+  searchPlaceholder:      'Tìm bài hoặc thư mục…',
+  searchClear:            'Xóa tìm kiếm',
+  noSearchResults:        'Không tìm thấy bài nào',
+  noSearchResultsHint:    'Thử từ khóa khác hoặc xóa tìm kiếm.',
   importFile:             '📂 Import file',
   chooseFolder:           '🗂 Chọn thư mục',
   noSongsYet:             'Chưa có bài nhạc nào',
@@ -272,6 +277,13 @@ export const vi = {
   clipMenuClear:           'Xoá',
 
   keys:                    'phím',
+
+  // ── Free Mode settings panel ────────────────────────────────────────────
+  freeSettingsKeyboardSize:  'Số phím đàn',
+  freeSettingsCountdownHint: 'Hiện 3-2-1 trước khi ghi âm',
+  freeSettingsMetronomeHint: 'Phát click nhịp — không thu vào bản ghi',
+  freeSettingsMeasureLines:  'Đường kẻ note',
+  freeSettingsMeasureHint:   'Kẻ ngang theo cao độ trong khung chỉnh đoạn',
 }
 
 export type Translations = typeof vi

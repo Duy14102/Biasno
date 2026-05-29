@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '@/context'
 import { useMidi }        from '@/context'
 import { useFileLibrary } from '@/components/library'
 import { audioEngine }    from '@/audio'
-import { FileRow }            from '@/components/library'
+import { FileRow, LibrarySearch, VirtualFileList } from '@/components/library'
 import { MidiDevicePicker }   from '@/components/library'
 import { DeleteConfirmModal } from '@/components/library'
 import { FolderConflictModal } from '@/components/library'
@@ -26,6 +26,10 @@ const BAR_STYLE = `
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 `
 
 export default function HomePage(): React.JSX.Element {
@@ -45,6 +49,19 @@ export default function HomePage(): React.JSX.Element {
   // Hover state — picked up by FileRow to show the delete affordance and
   // swap the leading icon to music bars on the active row.
   const [hoveredPath, setHoveredPath] = useState<string | null>(null)
+
+  // Library search.  Case-insensitive, matches against song name and (for
+  // folder entries) the absolute folder path.  Filter is O(n) per keystroke
+  // and runs comfortably for thousands of entries — no debounce needed.
+  const [searchQuery, setSearchQuery] = useState('')
+  const filteredList = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return fileList
+    return fileList.filter((e) =>
+      e.name.toLowerCase().includes(q) ||
+      (e.folderPath ? e.folderPath.toLowerCase().includes(q) : false))
+  }, [fileList, searchQuery])
+  const isSearching = searchQuery.trim().length > 0
 
   const lib = useFileLibrary()
 
@@ -128,8 +145,18 @@ export default function HomePage(): React.JSX.Element {
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-wide">{t('songList')}</h2>
               {fileList.length > 0 && (
-                <span className="text-[10px] font-mono text-slate-500 tabular-nums">
-                  {t('songsCount', { n: fileList.length })}
+                <span
+                  className={[
+                    'text-xs font-semibold tabular-nums px-2.5 py-0.5 rounded-full',
+                    'transition-colors duration-150',
+                    isSearching
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+                      : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+                  ].join(' ')}
+                >
+                  {isSearching
+                    ? t('songsMatchCount', { n: filteredList.length, total: fileList.length })
+                    : t('songsCount', { n: fileList.length })}
                 </span>
               )}
             </div>
@@ -155,6 +182,11 @@ export default function HomePage(): React.JSX.Element {
                 <span className="truncate">{folderPath}</span>
               </div>
             )}
+            {fileList.length > 0 && (
+              <div className="mt-2.5">
+                <LibrarySearch value={searchQuery} onChange={setSearchQuery} />
+              </div>
+            )}
           </div>
 
           {/* File list */}
@@ -169,21 +201,32 @@ export default function HomePage(): React.JSX.Element {
                   {t('noSongsHintBefore')}<span className="text-blue-600 dark:text-blue-300 font-medium">{t('noSongsHintImport')}</span>{t('noSongsHintMiddle')}<span className="text-slate-700 dark:text-slate-300 font-medium">{t('noSongsHintFolder')}</span>{t('noSongsHintAfter')}<span className="font-mono text-slate-500 dark:text-slate-400">.mid / .midi</span>{t('noSongsHintTail')}
                 </p>
               </div>
+            ) : filteredList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-2 animate-[fadein_180ms_ease-out]">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 dark:bg-slate-800/60 dark:border-slate-700/60 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                  <MusicNoteIcon className="w-6 h-6" />
+                </div>
+                <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">{t('noSearchResults')}</p>
+                <p className="text-xs text-slate-500 max-w-[16rem]">{t('noSearchResultsHint')}</p>
+              </div>
             ) : (
-              <ul className="py-1">
-                {fileList.map((entry) => (
-                  <li key={entry.path}>
-                    <FileRow
-                      entry={entry}
-                      isLoading={lib.loadingFiles.has(entry.path)}
-                      isHovered={hoveredPath === entry.path}
-                      onHoverChange={(h) => setHoveredPath(h ? entry.path : null)}
-                      onClick={() => lib.selectFile(entry)}
-                      onDelete={() => lib.requestDelete(entry)}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <VirtualFileList
+                items={filteredList}
+                rowKey={(entry) => entry.path}
+                renderRow={(entry) => (
+                  <FileRow
+                    entry={entry}
+                    isLoading={lib.loadingFiles.has(entry.path)}
+                    isHovered={hoveredPath === entry.path}
+                    currentFolderPath={folderPath}
+                    query={searchQuery}
+                    onHoverChange={(h) => setHoveredPath(h ? entry.path : null)}
+                    onClick={() => lib.selectFile(entry)}
+                    onDelete={() => lib.requestDelete(entry)}
+                  />
+                )}
+                className="h-full overflow-y-auto"
+              />
             )}
           </div>
 

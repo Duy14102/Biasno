@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import type { Clip, RecordedNote } from '@/freeMode'
 import { chunkEndAt } from '@/freeMode'
+import { isBlackKey, HAND_COLORS, handColorKey } from '@/utils'
 
 interface Props {
   notes:          RecordedNote[]
@@ -26,6 +27,7 @@ interface Props {
   durationMs:     number
   selectedClipId: number | string | null
   onSeek?:        (ms: number) => void
+  showMeasureLines?: boolean
 }
 
 const NOTE_RADIUS_PX     = 2
@@ -50,17 +52,20 @@ function pitchRange(notes: RecordedNote[]): { lo: number; hi: number } {
   return { lo: Math.max(0, lo - PITCH_PAD), hi: Math.min(127, hi + PITCH_PAD) }
 }
 
-// Velocity 0 → violet (hue 270), velocity 1 → fuchsia (hue 320).  Same
-// brand range as the gradient header bar.
-function noteFill(velocity: number): string {
-  const v = Math.max(0, Math.min(1, velocity))
-  const hue   = 270 + 50 * v
-  const alpha = (0.7 + 0.25 * v).toFixed(3)
-  return `hsla(${hue}, 80%, 65%, ${alpha})`
+// Hand-coloured note fills — pulled from the shared 4-colour palette so
+// the same MIDI note reads identically here, on the keyboard, the falling
+// notes, and the sheet.  Velocity modulates alpha so soft taps render
+// softer without breaking the hand identity.
+function noteFill(midi: number, velocity: number): string {
+  const v    = Math.max(0, Math.min(1, velocity))
+  const hand = midi >= 60 ? 'right' : 'left'
+  const c    = HAND_COLORS[handColorKey(midi, hand, isBlackKey(midi))]
+  const alpha = Math.round((0.78 + 0.18 * v) * 255).toString(16).padStart(2, '0')
+  return c.fill + alpha
 }
 
 export default function ClipNotesPreview({
-  notes, clips, durationMs, selectedClipId, onSeek,
+  notes, clips, durationMs, selectedClipId, onSeek, showMeasureLines = false,
 }: Props): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef    = useRef<HTMLCanvasElement>(null)
@@ -114,6 +119,39 @@ export default function ClipNotesPreview({
       }
     }
 
+    // ── Pass 1b: optional piano-roll guide.  Two layers, both subtle:
+    //   • Black-key rows get a thin shaded band (no per-pitch lines — the
+    //     bands themselves read as the grid).
+    //   • Every C gets a slightly stronger separator + tiny "C{n}" label,
+    //     giving the eye an octave anchor without a forest of lines.
+    if (showMeasureLines) {
+      const rowH = usableHeight / span
+      // (a) black-key row tints
+      for (let m = range.lo; m <= range.hi; m++) {
+        if (!isBlackKey(m)) continue
+        const yc = yOf(m)
+        const top = yc - rowH / 2
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.18)'   // slate-900 @ 18%
+        ctx.fillRect(0, top, cssWidth, rowH)
+      }
+      // (b) octave separator at the bottom edge of each C row + label
+      ctx.font = '9px ui-monospace, SFMono-Regular, Menlo, monospace'
+      ctx.textBaseline = 'middle'
+      for (let m = range.lo; m <= range.hi; m++) {
+        if (m % 12 !== 0) continue
+        const yc = Math.round(yOf(m) + rowH / 2) + 0.5
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.32)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(0, yc)
+        ctx.lineTo(cssWidth, yc)
+        ctx.stroke()
+        // small "C4"-style label tucked at the left edge
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.55)'
+        ctx.fillText(`C${Math.floor(m / 12) - 1}`, 4, yOf(m))
+      }
+    }
+
     // ── Pass 2: notes drawn at timeline level (extending across every
     //   touching clip they sound through), then per-clip clipping clips
     //   them to the visible region of each clip card. ───────────────────
@@ -121,7 +159,7 @@ export default function ClipNotesPreview({
       const chunk = chunkEndAt(clips, n.startMs) ?? n.endMs
       const audibleEnd = Math.min(n.endMs, chunk)
       if (audibleEnd <= n.startMs) continue
-      ctx.fillStyle = noteFill(n.velocity)
+      ctx.fillStyle = noteFill(n.midi, n.velocity)
       const ny = yOf(n.midi) - noteHeight / 2
       // Find every clip the audible span overlaps and draw a piece per
       // clip — so the 1 px clip-card inset gap reads as a tiny seam
@@ -175,7 +213,7 @@ export default function ClipNotesPreview({
       }
       ctx.stroke()
     }
-  }, [notes, clips, durationMs, selectedClipId, range])
+  }, [notes, clips, durationMs, selectedClipId, range, showMeasureLines])
 
   useLayoutEffect(() => { paint() }, [paint])
 

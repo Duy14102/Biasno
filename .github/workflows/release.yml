@@ -18,6 +18,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history + tags so we can diff against the previous tag
 
       - uses: actions/setup-node@v5
         with:
@@ -58,10 +60,72 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path release/Biasno -DestinationPath release/Biasno-${{ steps.ver.outputs.tag }}.zip
 
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Previous tag = highest existing v* that isn't the one we're cutting.
+          PREV=$(git tag -l 'v*' | grep -vxF "$TARGET" | sort -V | tail -n1 || true)
+
+          # Collect commit subjects between the previous tag and the default
+          # branch via GitHub's compare API — robust regardless of which ref the
+          # workflow checked out (pull_request events check out a merge ref).
+          if [ -n "$PREV" ]; then
+            subjects=$(gh api "repos/$REPO/compare/$PREV...main" \
+              --jq '.commits[].commit.message' 2>/dev/null || true)
+          else
+            subjects=$(gh api "repos/$REPO/commits" --jq '.[].commit.message' 2>/dev/null || true)
+          fi
+
+          # PR numbers referenced by squash-merge "(#N)" or merge-commit subjects.
+          nums=$(printf '%s' "$subjects" \
+            | grep -oE '\(#[0-9]+\)|Merge pull request #[0-9]+' \
+            | grep -oE '[0-9]+' | sort -un || true)
+
+          # Strip a leading conventional-commit prefix (feat:, fix(scope)!:, …).
+          strip() { printf '%s' "$1" | sed -E 's/^[a-z]+(\([^)]*\))?!?:[[:space:]]*//'; }
+
+          feats=""; fixes=""; others=""
+          for n in $nums; do
+            json=$(gh pr view "$n" --repo "$REPO" --json title,labels 2>/dev/null || true)
+            [ -z "$json" ] && continue
+            title=$(printf '%s' "$json" | jq -r '.title')
+            labels=$(printf '%s' "$json" | jq -r '[.labels[].name] | join(" ")')
+            line="- $(strip "$title") (#${n})"$'\n'
+            case " $labels " in
+              *" feature "*|*" enhancement "*) feats="${feats}${line}" ;;
+              *" bug "*)                       fixes="${fixes}${line}" ;;
+              *)                               others="${others}${line}" ;;
+            esac
+          done
+
+          {
+            echo "## 🎹 Biasno ${TARGET}"
+            echo
+            [ -n "$feats" ]  && { echo "### 🚀 Features";    echo; printf '%s' "$feats";  echo; }
+            [ -n "$fixes" ]  && { echo "### 🐛 Fixes";       echo; printf '%s' "$fixes";  echo; }
+            [ -n "$others" ] && { echo "### 🔧 Other";       echo; printf '%s' "$others"; echo; }
+            echo "### 📦 Install"
+            echo
+            echo "Download **\`Biasno-${TARGET}.zip\`** below, extract it, and run \`Biasno/Biasno.exe\` — Windows portable, no installer."
+            if [ -n "$PREV" ]; then
+              echo
+              echo "**Full changelog:** https://github.com/${REPO}/compare/${PREV}...${TARGET}"
+            fi
+          } > release_notes.md
+
+          echo "---- release notes ----"; cat release_notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           files: release/Biasno-${{ steps.ver.outputs.tag }}.zip
-          generate_release_notes: true
+          body_path: release_notes.md
           prerelease: ${{ steps.ver.outputs.prerelease }}

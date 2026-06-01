@@ -82,6 +82,7 @@ export default function FreeModePage(): React.JSX.Element {
         trimStartMs: snap.trimStartMs,
         trimEndMs:   snap.trimEndMs,
         clips:       snap.clips,
+        pedalEvents: snap.pedalEvents,
       })
       refreshEntries()
       return
@@ -94,6 +95,7 @@ export default function FreeModePage(): React.JSX.Element {
       trimStartMs: snap.trimStartMs,
       trimEndMs:   snap.trimEndMs,
       clips:       snap.clips,
+      pedalEvents: snap.pedalEvents,
     })
     setActiveId(entry.id)
     refreshEntries()
@@ -151,6 +153,7 @@ export default function FreeModePage(): React.JSX.Element {
       trimStartMs: snapshot.trimStartMs,
       trimEndMs:   snapshot.trimEndMs,
       clips:       snapshot.clips,
+      pedalEvents: snapshot.pedalEvents,
     })
     refreshEntries()
   }, [activeId, fileName, author, snapshot, refreshEntries])
@@ -330,6 +333,7 @@ export default function FreeModePage(): React.JSX.Element {
       trimStartMs: entry.trimStartMs,
       trimEndMs:   entry.trimEndMs,
       clips:       entry.clips ?? [],
+      pedalEvents: entry.pedalEvents,
     })
     setFileName(entry.name)
     setAuthor(entry.author)

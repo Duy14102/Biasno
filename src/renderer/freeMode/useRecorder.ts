@@ -8,10 +8,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMidi } from '@/context'
 import { audioEngine } from '@/audio'
+import type { PedalEvent } from '@/types'
 import type { FreeSnapshot, RecordedNote } from './types'
 
 export interface CaptureResult {
   notes:       RecordedNote[]
+  pedalEvents: PedalEvent[]
   durationMs:  number
   // True when the take was started with continueRecord, so the consumer
   // should preserve the prior trim / clips / etc. and only append the new
@@ -48,6 +50,7 @@ export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
   const idRef         = useRef(0)
   const openRef       = useRef<Map<number, RecordedNote>>(new Map())
   const liveNotes     = useRef<RecordedNote[]>([])
+  const livePedal     = useRef<PedalEvent[]>([])
   const continuedRef  = useRef(false)
   const baseAtStartRef = useRef<FreeSnapshot | null>(null)
 
@@ -55,6 +58,7 @@ export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
   const startRecord = useCallback(() => {
     if (isRecordingRef.current) return
     liveNotes.current      = []
+    livePedal.current      = []
     openRef.current.clear()
     idRef.current          = 0
     recStartRef.current    = performance.now()
@@ -73,6 +77,7 @@ export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
       return
     }
     liveNotes.current      = base.notes.slice()
+    livePedal.current      = base.pedalEvents ? base.pedalEvents.slice() : []
     openRef.current.clear()
     idRef.current          = base.notes.length
     // Offset the clock so `performance.now() - recStart` lines up with the
@@ -98,13 +103,14 @@ export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
     const notes = liveNotes.current.slice().sort((a, b) => a.startMs - b.startMs)
     const durationMs = notes.length === 0 ? 0
       : Math.max(...notes.map(n => n.endMs))
+    const pedalEvents = livePedal.current.slice().sort((a, b) => a.time - b.time)
 
     const continued   = continuedRef.current
     const baseAtStart = baseAtStartRef.current
     continuedRef.current   = false
     baseAtStartRef.current = null
 
-    onStop({ notes, durationMs, continued, baseAtStart, hadNotes: notes.length > 0 })
+    onStop({ notes, pedalEvents, durationMs, continued, baseAtStart, hadNotes: notes.length > 0 })
   }, [onStop])
 
   // ── input ─────────────────────────────────────────────────────────────
@@ -136,8 +142,17 @@ export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
     }
   }, [])
 
-  const { subscribe } = useMidi()
+  // Sustain pedal: always forward to the engine for live monitoring; while
+  // recording, also capture the edge on the recording clock.
+  const playPedal = useCallback((down: boolean) => {
+    audioEngine.setSustainPedal(down)
+    if (!isRecordingRef.current) return
+    livePedal.current.push({ time: performance.now() - recStartRef.current, down })
+  }, [])
+
+  const { subscribe, subscribePedal } = useMidi()
   useEffect(() => subscribe(playInput), [subscribe, playInput])
+  useEffect(() => subscribePedal(playPedal), [subscribePedal, playPedal])
 
   return { isRecording, startRecord, continueRecord, stopRecord, playInput }
 }

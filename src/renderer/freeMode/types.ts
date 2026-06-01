@@ -2,6 +2,8 @@
 // Times are stored in milliseconds relative to the moment recording started
 // (the first key-down resets t=0).  endMs = startMs until the key is released.
 
+import type { PedalEvent } from '@/types'
+
 export interface RecordedNote {
   id:        string
   midi:      number
@@ -33,4 +35,7 @@ export interface FreeSnapshot {
   trimStartMs:  number
   trimEndMs:    number
   clips:        Clip[]
+  // Sustain-pedal timeline captured during recording.  `time` is in ms on the
+  // same recording clock as notes (unlike the seconds-based MidiFileData one).
+  pedalEvents?: PedalEvent[]
 }

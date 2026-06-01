@@ -741,3 +741,38 @@ describe('trim window', () => {
     expect(setTrimEnd(s, 1000)).toBe(s)
   })
 })
+
+// ── pedal timeline stays aligned through time-shifting edits ─────────────────
+
+describe('pedal events follow clip edits', () => {
+  const clips = () => [makeClip(0, 400), makeClip(400, 800), makeClip(800, 1200)]
+  const snap = (pedalEvents: FreeSnapshot['pedalEvents']): FreeSnapshot => ({
+    notes: [note('a', 60, 100, 200), note('b', 62, 900, 1000)],
+    durationMs: 1200, trimStartMs: 0, trimEndMs: 1200, clips: clips(), pedalEvents,
+  })
+
+  it('keeps the sustain when deleting a span fully inside a pedal-down', () => {
+    // Pedal down 100→900; delete the middle [400..800] (span 400).  The cut is
+    // entirely inside the held span, so the sustain must survive: down 100,
+    // up at 900 shifted to 500.
+    const out = deleteAt(snap([{ time: 100, down: true }, { time: 900, down: false }]), 600)
+    expect(out.pedalEvents).toEqual([
+      { time: 100, down: true },
+      { time: 500, down: false },
+    ])
+  })
+
+  it('seeds the splice state when a transition sits inside the deleted span', () => {
+    // down 100, up 500 (inside), down 900.  Deleting [400..800] removes the
+    // up@500; post-splice resumes in the cut's end-state (up), so we get
+    // down 100, up 400, down 500.
+    const out = deleteAt(snap([
+      { time: 100, down: true }, { time: 500, down: false }, { time: 900, down: true },
+    ]), 600)
+    expect(out.pedalEvents).toEqual([
+      { time: 100, down: true },
+      { time: 400, down: false },
+      { time: 500, down: true },
+    ])
+  })
+})

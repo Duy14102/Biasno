@@ -25,6 +25,7 @@ import { loadJSON, saveJSON } from '@/utils'
 const MIN_CONNECT_MS = 350
 
 export type MidiNoteCallback = (midi: number, velocity: number, on: boolean) => void
+export type MidiPedalCallback = (down: boolean) => void
 
 interface KnownDevice {
   id:              string
@@ -51,6 +52,7 @@ interface MidiContextValue {
   dismissDisconnectNotice: () => void
   dismissConnectError:     () => void
   subscribe:               (cb: MidiNoteCallback) => () => void
+  subscribePedal:          (cb: MidiPedalCallback) => () => void
 }
 
 const MidiContext = createContext<MidiContextValue | null>(null)
@@ -81,6 +83,7 @@ export function MidiProvider({ children }: { children: React.ReactNode }): React
   // mustn't re-bind every render.
   const accessRef        = useRef<MIDIAccess | null>(null)
   const subscribersRef   = useRef<Set<MidiNoteCallback>>(new Set())
+  const pedalSubsRef     = useRef<Set<MidiPedalCallback>>(new Set())
   const seenIdsRef       = useRef<Set<string>>(new Set())
   const connectedIdRef   = useRef<string | null>(null)
   const connectingRef    = useRef<string | null>(null)
@@ -106,6 +109,13 @@ export function MidiProvider({ children }: { children: React.ReactNode }): React
       subscribersRef.current.forEach(cb => cb(note, velocity / 127, true))
     } else if (cmd === 0x80 || (cmd === 0x90 && velocity === 0)) {
       subscribersRef.current.forEach(cb => cb(note, 0, false))
+    } else if (cmd === 0xb0 && note === 64) {
+      // Sustain-pedal (CC64).  `cmd` already masks the channel (status & 0xf0),
+      // so the pedal is caught on any channel 1–16, not just channel 1.  `note`
+      // holds the controller number, `velocity` the value.  Standard MIDI
+      // binary threshold: ≥ 64 = down, 0–63 = up (no continuous half-pedal).
+      const down = velocity >= 64
+      pedalSubsRef.current.forEach(cb => cb(down))
     }
   }, [])
 
@@ -113,6 +123,9 @@ export function MidiProvider({ children }: { children: React.ReactNode }): React
     const access = accessRef.current
     if (!access) return
     access.inputs.forEach(i => { i.onmidimessage = null })
+    // Safety: a detached device can't send pedal-up, so release it ourselves
+    // to avoid a stuck damper after disconnect / device switch.
+    pedalSubsRef.current.forEach(cb => cb(false))
   }, [])
 
   const tryAttach = useCallback(async (deviceId: string): Promise<{ ok: boolean; error?: 'offline' | 'open-failed'; openMsg?: string; name?: string }> => {
@@ -178,6 +191,11 @@ export function MidiProvider({ children }: { children: React.ReactNode }): React
   const subscribe = useCallback((cb: MidiNoteCallback) => {
     subscribersRef.current.add(cb)
     return () => { subscribersRef.current.delete(cb) }
+  }, [])
+
+  const subscribePedal = useCallback((cb: MidiPedalCallback) => {
+    pedalSubsRef.current.add(cb)
+    return () => { pedalSubsRef.current.delete(cb) }
   }, [])
 
   const tryAutoConnect = useCallback((newIds: string[]) => {
@@ -275,7 +293,7 @@ export function MidiProvider({ children }: { children: React.ReactNode }): React
     <MidiContext.Provider value={{
       supported, devices, connectedId, connecting, connectError, disconnectNotice, globalError,
       connect, disconnect, forgetDevice,
-      dismissDisconnectNotice, dismissConnectError, subscribe,
+      dismissDisconnectNotice, dismissConnectError, subscribe, subscribePedal,
     }}>
       {children}
     </MidiContext.Provider>

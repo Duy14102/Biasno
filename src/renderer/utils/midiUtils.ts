@@ -1,6 +1,29 @@
 import { Midi } from '@tonejs/midi'
-import type { MidiFileData, MidiNote, Hand } from '@/types'
+import type { MidiFileData, MidiNote, PedalEvent, Hand } from '@/types'
 import { PIANO_MIN, PIANO_MAX, midiToNoteName } from './noteUtils'
+
+// Merge every track's CC64 (sustain pedal) into one time-sorted timeline.
+// @tonejs/midi normalises CC values to 0–1, so down = value ≥ 0.5 (the standard
+// binary 64/127 threshold — half-pedal values 1–63 read as up; continuous
+// half-pedaling is out of scope).  Consecutive edges of the same state are
+// collapsed so the timeline only carries real transitions (multiple tracks
+// often duplicate the pedal line).
+function extractPedalEvents(midi: Midi): PedalEvent[] {
+  const raw: PedalEvent[] = []
+  midi.tracks.forEach((track) => {
+    const cc64 = track.controlChanges[64]
+    if (!cc64) return
+    cc64.forEach((cc) => raw.push({ time: cc.time, down: cc.value >= 0.5 }))
+  })
+  raw.sort((a, b) => a.time - b.time)
+  const out: PedalEvent[] = []
+  for (const e of raw) {
+    const last = out[out.length - 1]
+    if (last && last.down === e.down) continue
+    out.push(e)
+  }
+  return out
+}
 
 export async function parseMidiBuffer(buffer: ArrayBuffer, fileName: string): Promise<MidiFileData> {
   const midi = new Midi(buffer)
@@ -55,6 +78,7 @@ export async function parseMidiBuffer(buffer: ArrayBuffer, fileName: string): Pr
     timeSignature,
     notes: allNotes,
     trackCount: midi.tracks.length,
+    pedalEvents: extractPedalEvents(midi),
   }
 }
 

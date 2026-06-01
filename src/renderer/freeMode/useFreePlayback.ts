@@ -14,7 +14,7 @@
 //     so clicking somewhere and then hitting Play resumes from that point.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { audioEngine } from '@/audio'
+import { audioEngine, sustainedEnd } from '@/audio'
 import type { Clip, FreeSnapshot } from './types'
 import { chunkEndAt, effectiveClips } from './clipOps'
 
@@ -154,7 +154,10 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
       // Audible end extends through every touching clip past the onset
       // clip — matches peaks.ts so split (touching) preserves audio.
       const chunkEnd  = chunkEndAt(clips, n.startMs) ?? c.endMs
-      const noteEnd   = Math.min(n.endMs, chunkEnd, region.end)
+      const keyEnd    = Math.min(n.endMs, chunkEnd, region.end)
+      // Sustain pedal extends the audible end past key-up, capped at the
+      // clip chunk / trim so a "silent gap" stays silent.
+      const noteEnd   = Math.min(chunkEnd, sustainedEnd(keyEnd, snapshot.pedalEvents, region.end))
       // Notes whose onset is before the playhead start playing from `fromMs`
       // (we accept the lost attack envelope — better mid-sustain than silent).
       const playStart = Math.max(n.startMs, fromMs)
@@ -162,8 +165,8 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
       const offsetSec = (playStart - fromMs) / 1000 / sp
       const dur       = Math.max(0.05, (noteEnd - playStart) / 1000 / sp)
       const vel       = Math.max(0, Math.min(1, n.velocity * c.volume))
-      // tail=0.05 (50 ms) keeps the note from clicking off but doesn't let
-      // it ring far past its written end — so a "silent gap" stays silent.
+      // tail=0.05 (50 ms) keeps the note from clicking off; real sustain comes
+      // from the pedal-extended `dur` above, not a blanket tail.
       audioEngine.noteAtTime(n.midi, ac + offsetSec, dur, vel, 0.05)
     }
 

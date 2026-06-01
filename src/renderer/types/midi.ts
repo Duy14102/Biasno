@@ -21,6 +21,12 @@ export interface MidiNote {
   channel:  number
 }
 
+/** One sustain-pedal (MIDI CC64) edge.  `down` true = pedal pressed. */
+export interface PedalEvent {
+  time: number    // seconds from song start
+  down: boolean
+}
+
 /** A fully parsed MIDI file, ready for playback / display. */
 export interface MidiFileData {
   name:          string
@@ -29,4 +35,7 @@ export interface MidiFileData {
   timeSignature: { numerator: number; denominator: number }
   notes:         MidiNote[]
   trackCount:    number
+  // Sustain-pedal timeline (CC64), time-sorted.  Absent / empty when the
+  // file carries no pedal data — playback then uses raw note durations.
+  pedalEvents?:  PedalEvent[]
 }

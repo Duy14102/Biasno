@@ -10,9 +10,36 @@ import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 import type { FreeSnapshot, RecordedNote } from './types'
 import { chunkEndAt, effectiveClips } from './clipOps'
 import { midiToMusicXml } from '@/components/sheet'
-import type { MidiNote, Hand } from '@/types'
+import { pedalDownAt } from '@/audio'
+import type { MidiNote, PedalEvent, Hand } from '@/types'
 
 const DEFAULT_BPM = 120
+
+// Pedal timeline for the exported [trim] slice, in SECONDS relative to t=0.
+// Seeds the pedal's state at the trim start so a span that began before the
+// cut still reads as "down", then includes every edge inside the window.
+// Consecutive duplicate states are collapsed.
+function trimmedPedal(s: FreeSnapshot): PedalEvent[] {
+  const evs = s.pedalEvents
+  if (!evs || evs.length === 0) return []
+  const raw: PedalEvent[] = []
+  if (pedalDownAt(s.trimStartMs, evs)) raw.push({ time: 0, down: true })
+  for (const e of evs) {
+    if (e.time <= s.trimStartMs || e.time >= s.trimEndMs) continue
+    raw.push({ time: (e.time - s.trimStartMs) / 1000, down: e.down })
+  }
+  const out: PedalEvent[] = []
+  for (const e of raw) {
+    const last = out[out.length - 1]
+    if (last && last.down === e.down) continue
+    out.push(e)
+  }
+  // Close a dangling pedal at the slice end so DAWs/notation don't hang it open.
+  if (out.length > 0 && out[out.length - 1].down) {
+    out.push({ time: Math.max(0, (s.trimEndMs - s.trimStartMs) / 1000), down: false })
+  }
+  return out
+}
 
 // Pull only the notes that fall inside at least one clip (and inside the
 // outer trim window).  Each kept note is shifted so the export starts at
@@ -65,6 +92,10 @@ export function buildMidi(s: FreeSnapshot, bpm = DEFAULT_BPM): ArrayBuffer {
       velocity: n.velocity,
     })
   })
+  // Sustain pedal (CC64) — value 1 = down, 0 = up.  DAWs honour this directly.
+  trimmedPedal(s).forEach((p) => {
+    track.addCC({ number: 64, value: p.down ? 1 : 0, time: p.time })
+  })
   // Midi.toArray() returns a Uint8Array — copy into a clean ArrayBuffer so
   // it survives the IPC structured clone without TypedArray view weirdness.
   const arr = midi.toArray()
@@ -94,7 +125,7 @@ function toMidiNotes(s: FreeSnapshot): MidiNote[] {
 export function buildMusicXml(s: FreeSnapshot, bpm = DEFAULT_BPM): string {
   const notes = toMidiNotes(s)
   if (notes.length === 0) return ''
-  return midiToMusicXml(notes, bpm, { numerator: 4, denominator: 4 }, ['left', 'right'])
+  return midiToMusicXml(notes, bpm, { numerator: 4, denominator: 4 }, ['left', 'right'], trimmedPedal(s))
 }
 
 // ─── PDF (via OSMD render → printToPDF in main) ────────────────────────────

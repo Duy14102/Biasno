@@ -143,8 +143,12 @@ export function usePracticeInput({
   // itself is owned at App level, so hot-plugging a piano mid-session is
   // transparent here — auto-connect attaches the new device to the dispatcher
   // and our subscriber keeps receiving notes without re-mounting.
-  const { subscribe } = useMidi()
+  const { subscribe, subscribePedal } = useMidi()
   useEffect(() => subscribe(handleNoteInput), [subscribe, handleNoteInput])
+
+  // Real piano's sustain pedal → live damper.  Held notes keep ringing while
+  // the pedal is down (view-listen has no live notes, so this is a no-op there).
+  useEffect(() => subscribePedal((down) => audioEngine.setSustainPedal(down)), [subscribePedal])
 
   // ─── Computer keyboard → piano (C3 = Z, F4 = Q, A5 = P) ──────────────────
   // Two stacked octaves so the computer-keyboard fallback covers a useful

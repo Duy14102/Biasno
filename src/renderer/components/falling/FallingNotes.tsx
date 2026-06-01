@@ -194,6 +194,9 @@ export default function FallingNotes({
     const effectiveLookAhead = LOOK_AHEAD / zoomRef.current
 
     for (const { note, state, flashAlpha = 0 } of renderNotes) {
+      // Bar length is the KEY-PRESS duration only.  The sustain pedal extends
+      // the AUDIO (see audio/pedal.ts) but never the visual bar — Synthesia's
+      // "key-press" style, chosen deliberately over its "sustained" style.
       const noteEndTime  = note.time + note.duration
       const noteTopDelta = note.time   - now   // >0 = start in future
       const noteBotDelta = noteEndTime - now   // >0 = end in future

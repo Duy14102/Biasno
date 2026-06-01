@@ -134,10 +134,10 @@ export class AudioEngine {
 
   // ─── Scheduled playback (song playback) ──────────────────────────────────
   // `tailSec` is the extra audible time appended past `duration` for a
-  // natural piano release.  Defaults to 1.5 s (PracticePage demo playback)
-  // because piano samples sound abrupt without it.  Free-Mode playback
-  // wants exact note cuts — pass a small tail (≈ 0.05 s) so seeking past
-  // a sustained note doesn't bleed its tail into the supposed-silent gap.
+  // natural piano release.  Defaults to 1.5 s because piano samples sound
+  // abrupt without it.  Both PracticePage and Free-Mode playback use this
+  // default so the two modes sound identical; seeks call stopAll(), which
+  // cancels any in-flight tail, so the ring-out never bleeds across a seek.
   noteAtTime(midi: number, startTime: number, duration: number, velocity = 0.8, tailSec = 1.5): void {
     if (!this.isReady) return
     const vel = Math.min(1, Math.max(0.01, velocity))

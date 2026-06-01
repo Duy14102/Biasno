@@ -162,9 +162,11 @@ export function useFreePlayback({ snapshot, speed = 1, onActive }: Args) {
       const offsetSec = (playStart - fromMs) / 1000 / sp
       const dur       = Math.max(0.05, (noteEnd - playStart) / 1000 / sp)
       const vel       = Math.max(0, Math.min(1, n.velocity * c.volume))
-      // tail=0.05 (50 ms) keeps the note from clicking off but doesn't let
-      // it ring far past its written end — so a "silent gap" stays silent.
-      audioEngine.noteAtTime(n.midi, ac + offsetSec, dur, vel, 0.05)
+      // Use the engine's default release tail (1.5 s) so a note's piano
+      // sample rings out naturally past its written end — identical to
+      // PracticePage playback. Without it the sample snaps off abruptly and
+      // Free Mode sounds noticeably different from Practice.
+      audioEngine.noteAtTime(n.midi, ac + offsetSec, dur, vel)
     }
 
     isPlayingRef.current = true

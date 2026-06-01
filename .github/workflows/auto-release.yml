@@ -28,7 +28,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          latest=$(git tag -l 'v*' | sort -V | tail -n1)
+          # Base the bump off the latest STABLE tag (ignore -beta/-* pre-releases),
+          # so a string of betas doesn't keep re-bumping the base version.
+          latest=$(git tag -l 'v*' | grep -v -- '-' | sort -V | tail -n1 || true)
           latest="${latest:-v0.0.0}"
           ver="${latest#v}"
           A="${ver%%.*}"; rest="${ver#*.}"; B="${rest%%.*}"; C="${rest##*.}"
@@ -52,8 +54,20 @@ jobs:
             feature) B=$((B+1)); C=0 ;;
             bug)     C=$((C+1)) ;;
           esac
+          base="v$A.$B.$C"
 
-          new_tag="v$A.$B.$C"
+          # A "beta" label cuts a pre-release: vX.Y.Z-beta.N, N auto-incrementing
+          # per base version.  Without it, a plain vX.Y.Z normal release is cut
+          # (so the newest gets GitHub's "Latest" badge).
+          case " $LABELS " in
+            *" beta "*)
+              n=$(git tag -l "${base}-beta.*" | sed -E 's/.*-beta\.//' | sort -n | tail -n1)
+              n=$(( ${n:-0} + 1 ))
+              new_tag="${base}-beta.${n}" ;;
+            *)
+              new_tag="$base" ;;
+          esac
+
           echo "bump=$bump"        >> "$GITHUB_OUTPUT"
           echo "new_tag=$new_tag"  >> "$GITHUB_OUTPUT"
           echo "::notice::$latest -> $new_tag ($bump) from labels: ${LABELS:-none}"

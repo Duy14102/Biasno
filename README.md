@@ -260,9 +260,10 @@ CI cuts a release automatically when a PR is merged into `main`, with a **label-
 | `bug` | patch | `v0.1.0` → `v0.1.1` |
 | `feature` / `enhancement` | minor | `v0.1.0` → `v0.2.0` |
 | `release` | major | `v0.1.0` → `v1.0.0` |
-| _(no release label)_ | none — release skipped | — |
+| `beta` (+ a bump label) | adds a `-beta.N` pre-release | `v0.2.0-beta.1` |
+| _(no bump label)_ | none — release skipped | — |
 
-The release workflow builds the Windows portable, zips it as `Biasno-<tag>.zip`, and generates grouped release notes from the merged PRs' titles + labels. While in beta the major version stays `0`.
+The workflow builds the Windows portable, zips it as `Biasno-<tag>.zip`, and generates grouped release notes from the merged PRs' titles + labels. A **`beta`** label produces a `-beta.N` **pre-release** (orange tag, auto-incrementing per base version); a plain `vX.Y.Z` is a normal release, so the newest one always carries GitHub's green **Latest** badge.
 
 ### Architecture notes
 

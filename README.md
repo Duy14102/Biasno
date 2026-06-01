@@ -73,6 +73,7 @@ Per-hand variants exist for every skill. Mode dropdown supports mid-session swit
 - Animated splash gates the app until the soundfont finishes loading — clicking a song before samples are ready is impossible.
 - 300 ms scheduling look-ahead so timing survives normal JS jitter.
 - MIDI keyboard input via Web MIDI API with auto-connect to remembered devices.
+- **Sustain pedal (CC64)** — a real piano's damper pedal is honoured everywhere: held notes keep ringing while the pedal is down and damp on release, in Practice play-along and Free-Mode recording alike. MIDI files that carry pedal play back with their real sustain.
 - Computer-keyboard fallback (Z + S/D row → C3 → E4, Q + 2/3 row → F4 → A5). Locked out automatically when a real piano is connected.
 
 ### Transport
@@ -109,7 +110,7 @@ Loop iterations show a `↻ 0:10–0:30` chip in the entry so loop-runs are reco
 A freestyle recording surface — same piano keyboard as practice, no song loaded. Reach it from the gradient "Open Free Mode" button on the home page.
 
 ### Recording
-- **Record** captures every keypress from the connected MIDI device, on-screen keyboard, or computer fallback keys. Live red timer + `● REC` chip + notes counter render while a take is in progress.
+- **Record** captures every keypress from the connected MIDI device, on-screen keyboard, or computer fallback keys — plus the **sustain-pedal** edges from a real piano, so a pedalled take plays back (and exports) with its real sustain. Live red timer + `● REC` chip + notes counter render while a take is in progress.
 - **Continue** appends to the existing take — the next keypress lands right after the current `durationMs`, so longer pieces don't need a single uninterrupted run-through.
 - **New** starts fresh, replacing the working draft with a new take. The previous take stays in the Library.
 - Every Stop auto-creates a Library entry; subsequent name / author / trim edits live-update that entry.
@@ -130,6 +131,7 @@ A freestyle recording surface — same piano keyboard as practice, no song loade
 - A single dropdown button offers **MIDI** (`.mid` for DAWs), **MusicXML** (`.musicxml` for notation editors), and **PDF** (the sheet itself, rendered via OSMD off-screen then converted by Electron's `webContents.printToPDF` in the main process).
 - PDF title uses engraving-style typography — EB Garamond via Google Fonts, with a Plantin → Garamond → Times fallback chain. Main process waits for `document.fonts.ready` before rasterising so the title is captured in the loaded font, not the fallback.
 - The file-name and author inputs feed all three formats; the author renders as the composer line in the PDF.
+- Captured **sustain pedal** is carried into all three: CC64 events in the MIDI, and `<pedal>` start/stop marks in the MusicXML / PDF sheet.
 
 ---
 
@@ -152,7 +154,8 @@ src/
 ├── main/             Electron main — IPC for dialogs, folder scan, MIDI buffer reads.
 ├── preload/          contextBridge — window.electronAPI.
 └── renderer/         React app.
-    ├── audio/        AudioEngine — sample loading, scheduling, metronome.
+    ├── audio/        AudioEngine — sample loading, scheduling, metronome,
+    │                 live sustain-pedal; pedal (sustainedEnd timeline helper).
     ├── constants/    storageKeys — single source of truth for all biasno.* LS keys.
     ├── context/      AppContext (files, settings, prefs), MidiContext (Web MIDI),
     │                 ThemeContext (dark / light).
@@ -170,7 +173,7 @@ src/
     │                 └ Mode:     mode (parseMode, modeLabel, hand/skill helpers).
     ├── freeMode/     FreeModePage's hooks + helpers:
     │                 useRecorder (capture + trim undo/redo),
-    │                 useFreePlayback (seek + speed + tail-cut playback),
+    │                 useFreePlayback (seek + speed + pedal-aware playback),
     │                 freeModeExport (MIDI / MusicXML / PDF builders),
     │                 library (localStorage CRUD), types.
     └── components/
@@ -217,7 +220,7 @@ src/
 
 **Scoring decoupling.** `useScoring` only knows about hits / misses / wrong-presses. The playback engine raises callbacks (`onHit` / `onMissed` / `onSongEnd` / `onLoopWrap`) and `PracticePage` wires them to scoring. Turning challenge off simply stops passing those callbacks — no special-cased branches in the engine.
 
-**Free Mode note tail.** `AudioEngine.noteAtTime` accepts an optional `tailSec` (default 1.5 s) that lets a piano sample's natural release ring past each note's logical end — practice playback wants this so notes don't snap off. Free Mode passes `tailSec = 0.05` so a sustained note from before a click-to-seek point doesn't bleed into a "silent" gap created by Continue. Playback hard-cuts at the same boundary the piano roll draws and the export files spell out.
+**Sustain pedal (CC64).** Sustain is modelled on the *real* damper pedal, not a blanket tail. Two paths share one pure helper (`audio/pedal.ts` → `sustainedEnd`): (1) **offline** — MIDI files and Free-Mode playback/export precompute each note's audible end from a pedal timeline, so a note rings through any pedal-down span; (2) **live** — `AudioEngine.setSustainPedal()` holds released keys while the pedal is down and damps them on release, driven by CC64 decoded in `MidiContext` (channel-masked, so any MIDI channel works) and forwarded by Practice + Free Mode. `noteAtTime`'s tail is now just a 0.05 s anti-click release — there is no 1.5 s artificial sustain anywhere. Pedal uses the standard binary threshold (value ≥ 64 = down; no continuous half-pedal). Falling-note bars stay = key-press duration (Synthesia "key-press" style) — the pedal extends the audio, never the visual.
 
 **Free Mode piano-roll preview.** The clip editor used to render a synthesised waveform (OfflineAudioContext → peaks → bars), which forced an audio-buffer-shaped visual to stay coherent through purely data-shaped operations (split / delete / paste / ripple). A whole class of bugs lived in that gap — envelope phase at the cut, peak normalisation across clip ids, async render races. The current `ClipNotesPreview` renders straight from `RecordedNote[]` to a Canvas2D piano roll (X = time, Y = MIDI pitch auto-fit, hue = velocity), so the visual is the data and clip operations are pure array transforms. Right-exclusive ownership at the cut (`n.startMs < c.startMs || n.startMs >= c.endMs` to skip) mirrors `clipAt` / `chunkEndAt` so split-touching boundaries assign onsets to the RIGHT clip — same convention everywhere.
 

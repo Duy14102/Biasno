@@ -110,8 +110,10 @@ export function MidiProvider({ children }: { children: React.ReactNode }): React
     } else if (cmd === 0x80 || (cmd === 0x90 && velocity === 0)) {
       subscribersRef.current.forEach(cb => cb(note, 0, false))
     } else if (cmd === 0xb0 && note === 64) {
-      // Sustain-pedal (CC64): value ≥ 64 = pressed.  `note` holds the
-      // controller number, `velocity` the controller value.
+      // Sustain-pedal (CC64).  `cmd` already masks the channel (status & 0xf0),
+      // so the pedal is caught on any channel 1–16, not just channel 1.  `note`
+      // holds the controller number, `velocity` the value.  Standard MIDI
+      // binary threshold: ≥ 64 = down, 0–63 = up (no continuous half-pedal).
       const down = velocity >= 64
       pedalSubsRef.current.forEach(cb => cb(down))
     }

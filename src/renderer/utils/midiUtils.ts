@@ -3,9 +3,11 @@ import type { MidiFileData, MidiNote, PedalEvent, Hand } from '@/types'
 import { PIANO_MIN, PIANO_MAX, midiToNoteName } from './noteUtils'
 
 // Merge every track's CC64 (sustain pedal) into one time-sorted timeline.
-// @tonejs/midi normalises CC values to 0–1, so down = value ≥ 0.5.  Consecutive
-// edges of the same state are collapsed so the timeline only carries real
-// transitions (multiple tracks often duplicate the pedal line).
+// @tonejs/midi normalises CC values to 0–1, so down = value ≥ 0.5 (the standard
+// binary 64/127 threshold — half-pedal values 1–63 read as up; continuous
+// half-pedaling is out of scope).  Consecutive edges of the same state are
+// collapsed so the timeline only carries real transitions (multiple tracks
+// often duplicate the pedal line).
 function extractPedalEvents(midi: Midi): PedalEvent[] {
   const raw: PedalEvent[] = []
   midi.tracks.forEach((track) => {

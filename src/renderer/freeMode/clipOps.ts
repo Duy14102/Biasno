@@ -23,17 +23,45 @@ export const MIN_CLIP_MS = 80
 // ── Pedal-timeline helpers ──────────────────────────────────────────────────
 // Pedal events live on the recording clock (ms), same as notes, so the
 // time-shifting clip ops must move them in lock-step or the damper desyncs
-// from the notes after an edit.
+// from the notes after an edit.  (pedalDownAt inlined here to keep clipOps a
+// pure data layer with no dependency on the audio engine.)
 
-// Delete ripple: drop events inside the removed span, shift later ones left.
-function pedalAfterDelete(events: PedalEvent[] | undefined, start: number, end: number, span: number): PedalEvent[] | undefined {
-  if (!events) return events
-  return events
-    .filter(e => e.time < start || e.time > end)
-    .map(e => e.time > end ? { ...e, time: e.time - span } : e)
+// Pedal state at `t` given a time-sorted edge list (up before the first edge).
+function pedalStateAt(t: number, events: readonly PedalEvent[]): boolean {
+  let down = false
+  for (const e of events) { if (e.time > t) break; down = e.down }
+  return down
 }
 
-// Insert ripple: shift events at/after the insert point right by width.
+// Collapse consecutive same-state edges so only real transitions remain.
+function dedupePedal(events: PedalEvent[]): PedalEvent[] {
+  const out: PedalEvent[] = []
+  for (const e of events) {
+    const last = out[out.length - 1]
+    if (last && last.down === e.down) continue
+    out.push(e)
+  }
+  return out
+}
+
+// Delete ripple: drop edges inside the removed span and shift later ones left.
+// The region after the splice resumes in whatever state the pedal held at the
+// cut's far edge (`end`) — so deleting a segment that sits BETWEEN a pedal-down
+// and pedal-up keeps the sustain that was active across the cut.
+function pedalAfterDelete(events: PedalEvent[] | undefined, start: number, end: number, span: number): PedalEvent[] | undefined {
+  if (!events) return events
+  const before = events.filter(e => e.time < start)
+  const after  = events.filter(e => e.time > end).map(e => ({ ...e, time: e.time - span }))
+  const stateBefore = before.length ? before[before.length - 1].down : false
+  const stateAtCut  = pedalStateAt(end, events)
+  const merged = [...before]
+  if (stateAtCut !== stateBefore) merged.push({ time: start, down: stateAtCut })
+  merged.push(...after)
+  return dedupePedal(merged)
+}
+
+// Insert ripple: shift edges at/after the insert point right by width.  State
+// continuity is preserved (nothing removed), so no seeding needed.
 function pedalAfterInsert(events: PedalEvent[] | undefined, insert: number, width: number): PedalEvent[] | undefined {
   if (!events) return events
   return events.map(e => e.time >= insert ? { ...e, time: e.time + width } : e)
@@ -499,17 +527,20 @@ export function moveToSlot(s: FreeSnapshot, clipId: string, targetSlot: number):
   })
 
   // Pedal events ride with the clip they fall inside (same per-clip delta as
-  // notes); events in a gap stay put.
-  const pedalEvents = mat.pedalEvents?.map((e) => {
-    for (let i = sorted.length - 1; i >= 0; i--) {
-      const oc = sorted[i]
-      if (e.time >= oc.startMs && e.time <= oc.endMs) {
-        const delta = shifts.get(oc.id) ?? 0
-        return delta === 0 ? e : { ...e, time: e.time + delta }
+  // notes); events in a gap stay put.  Reordering clips can reorder edges, so
+  // re-sort + collapse to keep the timeline monotonic for pedalStateAt.
+  const pedalEvents = mat.pedalEvents && dedupePedal(
+    mat.pedalEvents.map((e) => {
+      for (let i = sorted.length - 1; i >= 0; i--) {
+        const oc = sorted[i]
+        if (e.time >= oc.startMs && e.time <= oc.endMs) {
+          const delta = shifts.get(oc.id) ?? 0
+          return delta === 0 ? e : { ...e, time: e.time + delta }
+        }
       }
-    }
-    return e
-  })
+      return e
+    }).sort((a, b) => a.time - b.time),
+  )
 
   return {
     ...mat,

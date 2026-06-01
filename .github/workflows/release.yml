@@ -35,11 +35,13 @@ jobs:
           VERSION="${TAG#v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [ "${VERSION%%.*}" = "0" ]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          # Pre-release iff the tag carries a semver pre-release suffix (e.g.
+          # v0.2.0-beta.1).  Plain vX.Y.Z tags are normal releases, so the
+          # newest always gets GitHub's "Latest" badge.
+          case "$TAG" in
+            *-*) echo "prerelease=true"  >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - run: npm ci
 

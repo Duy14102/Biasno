@@ -3,6 +3,12 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag to build and release (e.g. v0.1.3)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,7 +24,26 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag }}"
+          [ -z "$TAG" ] && TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "${VERSION%%.*}" = "0" ]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - run: npm ci
+
+      - name: Sync package.json version
+        shell: bash
+        run: npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Build Electron app
         run: npm run package
@@ -31,10 +56,12 @@ jobs:
 
       - name: Zip Biasno folder
         shell: pwsh
-        run: Compress-Archive -Path release/Biasno -DestinationPath release/Biasno-${{ github.ref_name }}.zip
+        run: Compress-Archive -Path release/Biasno -DestinationPath release/Biasno-${{ steps.ver.outputs.tag }}.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/Biasno-${{ github.ref_name }}.zip
+          tag_name: ${{ steps.ver.outputs.tag }}
+          files: release/Biasno-${{ steps.ver.outputs.tag }}.zip
           generate_release_notes: true
+          prerelease: ${{ steps.ver.outputs.prerelease }}

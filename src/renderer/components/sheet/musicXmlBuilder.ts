@@ -1,4 +1,11 @@
-import type { MidiNote, Hand } from '@/types'
+import type { MidiNote, PedalEvent, Hand } from '@/types'
+
+// Pedal state at time `t` (seconds) given a time-sorted edge list.
+function pedalDownAtSec(t: number, events: readonly PedalEvent[]): boolean {
+  let down = false
+  for (const e of events) { if (e.time > t) break; down = e.down }
+  return down
+}
 
 // ─── Duration table ───────────────────────────────────────────────────────────
 const DIVS = 16
@@ -70,11 +77,17 @@ export function midiToMusicXml(
   notes: MidiNote[],
   bpm: number,
   ts: { numerator: number; denominator: number },
-  activeHands: Hand[]
+  activeHands: Hand[],
+  pedalEvents: readonly PedalEvent[] = []
 ): string {
   const bpm_     = Math.max(1, bpm)
   const divsPerM = Math.round(ts.numerator * (4 / ts.denominator) * DIVS)
   const toDivs   = (s: number) => Math.round(s * bpm_ / 60 * DIVS)
+  // Seconds at the start of measure `m` — used to sample the pedal state so we
+  // can drop start/stop marks at measure resolution.
+  const measureStartSec = (m: number) => (m * divsPerM) * 60 / (bpm_ * DIVS)
+  const pedalDir = (type: 'start' | 'stop') =>
+    `<direction placement="below"><direction-type><pedal type="${type}" line="yes"/></direction-type></direction>`
 
   const filtered = notes.filter(n => n.hand === 'unknown' || activeHands.includes(n.hand))
   if (!filtered.length) return ''
@@ -110,6 +123,7 @@ export function midiToMusicXml(
     return xml
   }
 
+  const hasPedal = pedalEvents.length > 0
   const measures = Array.from({ length: totalM }, (_, m) => {
     let x = `<measure number="${m + 1}">`
     if (m === 0) x += [
@@ -121,9 +135,21 @@ export function midiToMusicXml(
       `<beat-unit>quarter</beat-unit><per-minute>${Math.round(bpm_)}</per-minute>`,
       `</metronome></direction-type><sound tempo="${Math.round(bpm_)}"/></direction>`,
     ].join('')
+    // Sustain-pedal marks at measure resolution: start when the pedal becomes
+    // down at this measure's start, stop when it lifts.
+    if (hasPedal) {
+      const curDown  = pedalDownAtSec(measureStartSec(m), pedalEvents)
+      const prevDown = m === 0 ? false : pedalDownAtSec(measureStartSec(m - 1), pedalEvents)
+      if (curDown && !prevDown) x += pedalDir('start')
+      else if (!curDown && prevDown) x += pedalDir('stop')
+    }
     x += buildStaff(treble, 1, 1, m)
     x += `<backup><duration>${divsPerM}</duration></backup>`
     x += buildStaff(bass, 2, 2, m)
+    // Close a still-down pedal at the very end so the line doesn't hang open.
+    if (hasPedal && m === totalM - 1 && pedalDownAtSec(measureStartSec(m), pedalEvents)) {
+      x += pedalDir('stop')
+    }
     return x + '</measure>'
   })
 

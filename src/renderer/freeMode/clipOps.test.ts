@@ -741,3 +741,26 @@ describe('trim window', () => {
     expect(setTrimEnd(s, 1000)).toBe(s)
   })
 })
+
+// ── pedal timeline stays aligned through time-shifting edits ─────────────────
+
+describe('pedal events follow clip edits', () => {
+  it('delete ripples later pedal edges left and drops ones inside the gap', () => {
+    // Three clips; delete the middle [400..800] (span 400).
+    const clips = [makeClip(0, 400), makeClip(400, 800), makeClip(800, 1200)]
+    const s: FreeSnapshot = {
+      notes: [note('a', 60, 100, 200), note('b', 62, 900, 1000)],
+      durationMs: 1200, trimStartMs: 0, trimEndMs: 1200, clips,
+      pedalEvents: [
+        { time: 100, down: true },   // before target — stays
+        { time: 500, down: false },  // inside target — dropped
+        { time: 900, down: true },   // after target — shifts left by 400 → 500
+      ],
+    }
+    const out = deleteAt(s, 600)
+    expect(out.pedalEvents).toEqual([
+      { time: 100, down: true },
+      { time: 500, down: true },
+    ])
+  })
+})

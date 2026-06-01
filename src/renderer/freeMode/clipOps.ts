@@ -16,8 +16,28 @@
 // edit materialises that into a concrete clip array.
 
 import type { Clip, FreeSnapshot, RecordedNote } from './types'
+import type { PedalEvent } from '@/types'
 
 export const MIN_CLIP_MS = 80
+
+// ── Pedal-timeline helpers ──────────────────────────────────────────────────
+// Pedal events live on the recording clock (ms), same as notes, so the
+// time-shifting clip ops must move them in lock-step or the damper desyncs
+// from the notes after an edit.
+
+// Delete ripple: drop events inside the removed span, shift later ones left.
+function pedalAfterDelete(events: PedalEvent[] | undefined, start: number, end: number, span: number): PedalEvent[] | undefined {
+  if (!events) return events
+  return events
+    .filter(e => e.time < start || e.time > end)
+    .map(e => e.time > end ? { ...e, time: e.time - span } : e)
+}
+
+// Insert ripple: shift events at/after the insert point right by width.
+function pedalAfterInsert(events: PedalEvent[] | undefined, insert: number, width: number): PedalEvent[] | undefined {
+  if (!events) return events
+  return events.map(e => e.time >= insert ? { ...e, time: e.time + width } : e)
+}
 
 let _idCounter = 0
 const nextId = (prefix: string): string =>
@@ -240,6 +260,7 @@ export function deleteAt(s: FreeSnapshot, ms: number): FreeSnapshot {
     ...mat,
     notes:      notes.sort((a, b) => a.startMs - b.startMs),
     clips,
+    pedalEvents: pedalAfterDelete(mat.pedalEvents, target.startMs, target.endMs, span),
     durationMs: Math.max(0, mat.durationMs - span),
     trimEndMs:  Math.max(mat.trimStartMs, mat.trimEndMs - span),
   }
@@ -390,6 +411,7 @@ function rippleInsert(s: FreeSnapshot, source: Clip, insertStartMs: number): Fre
     ...mat,
     clips:      sortClips([...shiftedClips, dup]),
     notes:      [...shiftedNotes, ...dupNotes].sort((a, b) => a.startMs - b.startMs),
+    pedalEvents: pedalAfterInsert(mat.pedalEvents, insert, width),
     durationMs: Math.max(mat.durationMs + width, dup.endMs),
     trimEndMs,
   }
@@ -476,10 +498,24 @@ export function moveToSlot(s: FreeSnapshot, clipId: string, targetSlot: number):
     return n
   })
 
+  // Pedal events ride with the clip they fall inside (same per-clip delta as
+  // notes); events in a gap stay put.
+  const pedalEvents = mat.pedalEvents?.map((e) => {
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const oc = sorted[i]
+      if (e.time >= oc.startMs && e.time <= oc.endMs) {
+        const delta = shifts.get(oc.id) ?? 0
+        return delta === 0 ? e : { ...e, time: e.time + delta }
+      }
+    }
+    return e
+  })
+
   return {
     ...mat,
     clips:      repositioned,
     notes:      notes.sort((a, b) => a.startMs - b.startMs),
+    pedalEvents,
     durationMs: Math.max(mat.durationMs, cursor),
     trimEndMs:  Math.max(mat.trimEndMs, cursor),
   }

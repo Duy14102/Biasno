@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import type { MidiNote, MidiFileData } from '@/types'
-import { audioEngine } from '@/audio'
+import { audioEngine, sustainedEnd } from '@/audio'
 import { LOOKAHEAD_REAL_MS } from './constants'
 import type { NoteState } from './noteState'
 
@@ -43,6 +43,12 @@ export function useAudioScheduler({
     const bpm            = bpmMultRef.current
     const lookaheadSongS = (LOOKAHEAD_REAL_MS / 1000) * bpm
     const toneNow        = audioEngine.currentTime
+    const pedal          = midiFile.pedalEvents
+    const songEnd        = midiFile.duration
+    // Audible end of a note once the file's sustain pedal is honoured — the
+    // note rings through any pedal-down span past its key-up.
+    const audibleEndOf = (note: MidiNote) =>
+      sustainedEnd(note.time + note.duration, pedal, songEnd)
 
     // Work on a SINGLE copy of the state map for this scheduler run.  Update
     // it synchronously as we schedule notes, then flush to React once.  This
@@ -72,7 +78,9 @@ export function useAudioScheduler({
       // Mid-note resume: play remaining portion from a buffer offset (no re-attack).
       if (delaySong < 0 && remainingSong > 0.05) {
         const elapsedReal   = (-delaySong) / bpm
-        const remainingReal = remainingSong / bpm
+        // Ring through the pedal: remaining AUDIBLE time from `now`, not just
+        // to the key-up.
+        const remainingReal = Math.max(remainingSong, audibleEndOf(note) - now) / bpm
         audioEngine.noteAtTimeWithOffset(note.midi, toneNow + 0.005, elapsedReal, remainingReal, note.velocity)
         next.set(note.id, { ...ns, scheduled: true })
         stateChanged = true
@@ -84,7 +92,8 @@ export function useAudioScheduler({
       // Upcoming note within lookahead window — schedule normally.
       if (delaySong <= lookaheadSongS) {
         const startTime = toneNow + delaySong / bpm
-        const scaledDur = note.duration / bpm
+        // Duration carries the pedal sustain so the note rings as written.
+        const scaledDur = (audibleEndOf(note) - note.time) / bpm
         next.set(note.id, { ...ns, scheduled: true })
         stateChanged = true
         audioEngine.noteAtTime(note.midi, startTime, scaledDur, note.velocity)

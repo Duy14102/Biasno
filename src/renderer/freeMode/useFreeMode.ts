@@ -57,9 +57,9 @@ export interface FreeModeApi {
 // Without that, the playback engine would filter notes outside any clip and
 // the new tail would appear visible-but-silent.
 function buildStopSnapshot(result: CaptureResult): FreeSnapshot {
-  const { notes, durationMs, continued, baseAtStart } = result
+  const { notes, pedalEvents, durationMs, continued, baseAtStart } = result
   if (!continued || !baseAtStart) {
-    return { notes, durationMs, trimStartMs: 0, trimEndMs: durationMs, clips: [] }
+    return { notes, pedalEvents, durationMs, trimStartMs: 0, trimEndMs: durationMs, clips: [] }
   }
 
   const extended = durationMs > baseAtStart.durationMs
@@ -74,6 +74,7 @@ function buildStopSnapshot(result: CaptureResult): FreeSnapshot {
   }
   return {
     notes,
+    pedalEvents,
     durationMs:  Math.max(baseAtStart.durationMs, durationMs),
     trimStartMs: baseAtStart.trimStartMs,
     trimEndMs:   extended

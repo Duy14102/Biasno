@@ -1,4 +1,5 @@
 import type { Clip, RecordedNote } from './types'
+import type { PedalEvent } from '@/types'
 import { LS } from '@/constants'
 import { loadJSON, saveJSON } from '@/utils'
 
@@ -15,6 +16,8 @@ export interface LibraryEntry {
   // Persisted clip subdivisions.  Optional for back-compat with entries
   // written before the multi-clip feature shipped.
   clips?:      Clip[]
+  // Captured sustain-pedal timeline (ms).  Optional for back-compat.
+  pedalEvents?: PedalEvent[]
   createdAt:   number
   updatedAt:   number
 }

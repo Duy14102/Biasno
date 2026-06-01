@@ -25,6 +25,14 @@ export class AudioEngine {
   // Cache AudioBuffers so we can resume mid-note without re-attack
   private bufferCache    = new Map<number, AudioBuffer>()
 
+  // ─── Live sustain-pedal (damper) state ────────────────────────────────────
+  // When the pedal is down, releasing a key does NOT stop the note — the node
+  // moves into pedalHeld and keeps ringing until the pedal lifts.  Mirrors a
+  // real piano damper; driven by CC64 from MidiContext.
+  private pedalDown      = false
+  private pedalHeld      = new Map<number, AudioBufferSourceNode>()
+  private pedalHeldSynth = new Set<number>()   // fallback-synth equivalent
+
   // ─── Init (idempotent) ────────────────────────────────────────────────────
   initialize(): Promise<AudioSource> {
     if (this.isReady) return Promise.resolve(this.source)
@@ -105,9 +113,13 @@ export class AudioEngine {
       if (this.player && this.ac) {
         const existing = this.activeNodes.get(midi)
         if (existing) { try { existing.stop(this.ac.currentTime + 0.02) } catch {} }
+        // Re-striking a pitch the pedal is still holding: stop the held node.
+        const held = this.pedalHeld.get(midi)
+        if (held) { try { held.stop(this.ac.currentTime + 0.02) } catch {} this.pedalHeld.delete(midi) }
         const node = this.player.play(midiToNote(midi), this.ac.currentTime, { gain: vel * 5 })
         this.activeNodes.set(midi, node as unknown as AudioBufferSourceNode)
       } else if (this.fallbackSynth) {
+        this.pedalHeldSynth.delete(midi)
         this.fallbackSynth.triggerAttack(
           Tone.Frequency(midi, 'midi').toFrequency(), Tone.now(), vel
         )
@@ -121,24 +133,54 @@ export class AudioEngine {
       if (this.player && this.ac) {
         const node = this.activeNodes.get(midi)
         if (node) {
-          node.stop(this.ac.currentTime + 0.06)
           this.activeNodes.delete(midi)
+          if (this.pedalDown) {
+            // Pedal held — keep ringing; retire any prior held node for this pitch.
+            const prev = this.pedalHeld.get(midi)
+            if (prev && prev !== node) { try { prev.stop(this.ac.currentTime + 0.02) } catch {} }
+            this.pedalHeld.set(midi, node)
+          } else {
+            node.stop(this.ac.currentTime + 0.06)
+          }
         }
       } else if (this.fallbackSynth) {
-        this.fallbackSynth.triggerRelease(
-          Tone.Frequency(midi, 'midi').toFrequency(), Tone.now()
-        )
+        if (this.pedalDown) {
+          this.pedalHeldSynth.add(midi)
+        } else {
+          this.fallbackSynth.triggerRelease(
+            Tone.Frequency(midi, 'midi').toFrequency(), Tone.now()
+          )
+        }
       }
     } catch { /* ignore */ }
   }
 
+  // ─── Live sustain pedal (CC64) ────────────────────────────────────────────
+  // Driven by MidiContext when a real piano's damper pedal moves.  Pressing
+  // holds released notes; releasing damps everything the pedal was holding.
+  setSustainPedal(down: boolean): void {
+    if (down === this.pedalDown) return
+    this.pedalDown = down
+    if (down) return
+    if (this.ac) {
+      const t = this.ac.currentTime + 0.02
+      this.pedalHeld.forEach((node) => { try { node.stop(t) } catch {} })
+    }
+    this.pedalHeld.clear()
+    if (this.fallbackSynth) {
+      this.pedalHeldSynth.forEach((m) => {
+        try { this.fallbackSynth!.triggerRelease(Tone.Frequency(m, 'midi').toFrequency(), Tone.now()) } catch {}
+      })
+    }
+    this.pedalHeldSynth.clear()
+  }
+
   // ─── Scheduled playback (song playback) ──────────────────────────────────
-  // `tailSec` is the extra audible time appended past `duration` for a
-  // natural piano release.  Defaults to 1.5 s (PracticePage demo playback)
-  // because piano samples sound abrupt without it.  Free-Mode playback
-  // wants exact note cuts — pass a small tail (≈ 0.05 s) so seeking past
-  // a sustained note doesn't bleed its tail into the supposed-silent gap.
-  noteAtTime(midi: number, startTime: number, duration: number, velocity = 0.8, tailSec = 1.5): void {
+  // `tailSec` is a small extra audible time appended past `duration` so the
+  // piano sample's natural release doesn't click off abruptly.  Real sustain
+  // comes from the caller extending `duration` via the pedal timeline
+  // (see audio/pedal.ts) — there is deliberately NO blanket sustain here.
+  noteAtTime(midi: number, startTime: number, duration: number, velocity = 0.8, tailSec = 0.05): void {
     if (!this.isReady) return
     const vel = Math.min(1, Math.max(0.01, velocity))
     try {
@@ -205,6 +247,11 @@ export class AudioEngine {
       try { node.stop(now) } catch { /* ignore */ }
     })
     this.scheduledNodes.clear()
+    // Drop any pedal-held live nodes and reset the damper.
+    this.pedalHeld.forEach((node) => { try { node.stop(now) } catch { /* ignore */ } })
+    this.pedalHeld.clear()
+    this.pedalHeldSynth.clear()
+    this.pedalDown = false
     if (this.fallbackSynth) this.fallbackSynth.releaseAll()
     // Silence gain — do NOT auto-restore; call restoreVolume() before next play
     if (this.gainNode && this.ac) {

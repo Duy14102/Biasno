@@ -285,8 +285,24 @@ export default function PracticePage(): React.JSX.Element {
     setHintKeys((prev) => (prev.size ? new Set() : prev))
   }, [])
 
+  // "My piano makes its own sound" — when on AND a MIDI device is connected,
+  // suppress the app's synthesis of the notes the player plays so the real
+  // piano isn't doubled.  Persisted so the choice survives song/app restarts.
+  const { connectedId, devices } = useMidi()
+  const [pianoOwnSound, setPianoOwnSound] = useState(
+    () => localStorage.getItem(LS.MIDI_OWN_SOUND) === 'true',
+  )
+  const handlePianoOwnSoundToggle = useCallback(() => {
+    setPianoOwnSound((prev) => {
+      const next = !prev
+      localStorage.setItem(LS.MIDI_OWN_SOUND, String(next))
+      return next
+    })
+  }, [])
+
   const { handleNoteInput } = usePracticeInput({
     isViewMode, needsMelody,
+    suppressDeviceAudio: pianoOwnSound && connectedId !== null,
     isPlayingRef, currentTimeRef, noteStatesRef, holdingRef,
     setActiveKeys, setNoteStates, setIsPlaying, triggerFlash,
     onInput: handleInputBeat,
@@ -484,7 +500,6 @@ export default function PracticePage(): React.JSX.Element {
     const n = Number(raw)
     return (KEY_COUNTS as number[]).includes(n) ? (n as KeyCount) : 88
   })
-  const { connectedId, devices } = useMidi()
   const connectedDeviceName = useMemo(
     () => (connectedId ? devices.find(d => d.id === connectedId)?.name ?? null : null),
     [connectedId, devices],
@@ -596,6 +611,8 @@ export default function PracticePage(): React.JSX.Element {
         measureLines={measureLines}
         keyCount={keyCount}
         keyCountLocked={keyCountLocked}
+        midiConnected={connectedId !== null}
+        pianoOwnSound={pianoOwnSound}
         challengeEnabled={isViewMode ? undefined : challengeEnabled}
         scoreVersion={scoreVersion}
         onBack={handleBack}
@@ -613,6 +630,7 @@ export default function PracticePage(): React.JSX.Element {
         onVolumeMute={handleVolumeMute}
         onZoomChange={handleZoomChange}
         onMeasureLinesToggle={handleMeasureLinesToggle}
+        onPianoOwnSoundToggle={handlePianoOwnSoundToggle}
         onModeChange={handleModeChange}
         onKeyCountChange={handleKeyCountChange}
         onChallengeToggle={isViewMode ? undefined : () => setChallengeEnabled(!challengeEnabled)}

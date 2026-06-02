@@ -125,6 +125,7 @@ export const en: Translations = {
   noteSize:               'Note size',
   measureLines:           'Measure lines',
   countdown321:           '3-2-1 countdown',
+  pianoOwnSound:          'My piano makes its own sound',
 
   practiceModeHeading:    'Practice mode',
 

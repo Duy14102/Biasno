@@ -8,6 +8,7 @@ export const LS = {
   THEME:             'biasno.theme',
   LANG:              'biasno.lang',
   MIDI_KNOWN:        'biasno.midi.knownDevices',
+  MIDI_OWN_SOUND:    'biasno.midi.ownSound',
   FREE_LIBRARY:      'freeMode:library:v1',
 } as const
 

@@ -10,15 +10,18 @@ type Handlers = {
   onZoomChange: ReturnType<typeof vi.fn<(v: number) => void>>
   onMeasureLinesToggle: ReturnType<typeof vi.fn<() => void>>
   onCountdownToggle: ReturnType<typeof vi.fn<() => void>>
+  onPianoOwnSoundToggle: ReturnType<typeof vi.fn<() => void>>
 }
 
 const wrap = (over: Partial<{
   volume: number; zoom: number; measureLines: boolean; countdownEnabled: boolean
+  midiConnected: boolean; pianoOwnSound: boolean
 }> = {}) => {
   const h: Handlers = {
     onVolumeChange: vi.fn<(v: number) => void>(), onVolumeMute: vi.fn<() => void>(),
     onZoomChange: vi.fn<(v: number) => void>(),
     onMeasureLinesToggle: vi.fn<() => void>(), onCountdownToggle: vi.fn<() => void>(),
+    onPianoOwnSoundToggle: vi.fn<() => void>(),
   }
   const r = render(
     <SettingsPanel
@@ -26,6 +29,8 @@ const wrap = (over: Partial<{
       zoom={over.zoom ?? 1}
       measureLines={over.measureLines ?? false}
       countdownEnabled={over.countdownEnabled ?? false}
+      midiConnected={over.midiConnected ?? false}
+      pianoOwnSound={over.pianoOwnSound ?? false}
       {...h}
     />,
   )
@@ -127,6 +132,23 @@ describe('SettingsPanel', () => {
     expect(switches[1].getAttribute('aria-checked')).toBe('true')
     fireEvent.click(switches[1])
     expect(h.onCountdownToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('piano-own-sound toggle is hidden when no MIDI device is connected', () => {
+    const { container, queryByText } = wrap({ midiConnected: false })
+    open(container)
+    expect(queryByText('pianoOwnSound')).toBeNull()
+  })
+
+  it('piano-own-sound toggle shows when connected, reflects state, fires callback', () => {
+    const { container, getByText, h } = wrap({ midiConnected: true, pianoOwnSound: true })
+    open(container)
+    expect(getByText('pianoOwnSound')).toBeTruthy()
+    const switches = container.querySelectorAll('[role="switch"]')
+    // Order: pianoOwnSound (audio section), measureLines, countdown (display).
+    expect(switches[0].getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(switches[0])
+    expect(h.onPianoOwnSoundToggle).toHaveBeenCalledTimes(1)
   })
 
   it('closes on outside mousedown', () => {

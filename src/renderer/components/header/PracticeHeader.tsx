@@ -29,6 +29,8 @@ interface PracticeHeaderProps {
   measureLines:     boolean
   keyCount:         KeyCount
   keyCountLocked:   boolean
+  midiConnected:    boolean
+  pianoOwnSound:    boolean
   challengeEnabled?: boolean
   scoreVersion?:    number
   onBack:               () => void
@@ -46,6 +48,7 @@ interface PracticeHeaderProps {
   onVolumeMute:         () => void
   onZoomChange:         (val: number) => void
   onMeasureLinesToggle: () => void
+  onPianoOwnSoundToggle: () => void
   onModeChange:         (mode: PracticeMode) => void
   onKeyCountChange:     () => void
   onChallengeToggle?:   () => void
@@ -54,11 +57,11 @@ interface PracticeHeaderProps {
 export default function PracticeHeader({
   songName, isPlaying, bpmMultiplier, originalBpm,
   metronomeOn, loopOn, countdownEnabled, showSheetMusic, showFallingNotes, mode,
-  volume, zoom, measureLines, keyCount, keyCountLocked, challengeEnabled, scoreVersion,
+  volume, zoom, measureLines, keyCount, keyCountLocked, midiConnected, pianoOwnSound, challengeEnabled, scoreVersion,
   onBack, onPlayPause, onRestart, onRewind, onFastForward,
   onBpmChange, onMetronomeToggle, onLoopToggle, onCountdownToggle,
   onSheetMusicToggle, onFallingNotesToggle,
-  onVolumeChange, onVolumeMute, onZoomChange, onMeasureLinesToggle, onModeChange,
+  onVolumeChange, onVolumeMute, onZoomChange, onMeasureLinesToggle, onPianoOwnSoundToggle, onModeChange,
   onKeyCountChange, onChallengeToggle,
 }: PracticeHeaderProps): React.JSX.Element {
   const { t } = useLanguage()
@@ -187,9 +190,10 @@ export default function PracticeHeader({
 
       <SettingsPanel
         volume={volume} zoom={zoom} measureLines={measureLines} countdownEnabled={countdownEnabled}
+        midiConnected={midiConnected} pianoOwnSound={pianoOwnSound}
         onVolumeChange={onVolumeChange} onVolumeMute={onVolumeMute}
         onZoomChange={onZoomChange} onMeasureLinesToggle={onMeasureLinesToggle}
-        onCountdownToggle={onCountdownToggle}
+        onCountdownToggle={onCountdownToggle} onPianoOwnSoundToggle={onPianoOwnSoundToggle}
       />
     </header>
   )

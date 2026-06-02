@@ -116,7 +116,8 @@ Every skill has per-hand variants. The mode dropdown switches mid-session with a
 - 300 ms scheduling look-ahead so timing survives normal JS jitter.
 - MIDI keyboard input via the Web MIDI API, with auto-connect to remembered devices.
 - **Sustain pedal (CC64)** — a real piano's damper pedal is honoured everywhere: held notes keep ringing while the pedal is down and damp on release, in Practice play-along and Free-Mode recording alike. MIDI files that carry pedal play back with their real sustain. (See the [architecture note](#architecture-notes) for the model.)
-- Computer-keyboard fallback (`Z` + `S`/`D` row → C3–E4, `Q` + `2`/`3` row → F4–A5). Locked out automatically when a real piano is connected.
+- **My piano makes its own sound** — a toggle in the Practice / Free-Mode settings (shown only while a MIDI device is connected). On a piano with its own speakers (e.g. Yamaha P45), turn it on so the app stops re-synthesising the keys you play and you don't hear a doubled note. It only mutes notes coming **from the device** — the on-screen keyboard and PC keyboard keep their app sound. Off by default (a controller with no speakers needs the app's sound); persisted across pages.
+- Computer-keyboard input (`Z` + `S`/`D` row → C3–E4, `Q` + `2`/`3` row → F4–A5), the on-screen keyboard, and a connected MIDI piano all stay live at once — play any combination together.
 
 ### Transport
 

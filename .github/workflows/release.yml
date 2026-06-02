@@ -80,11 +80,14 @@ jobs:
           # workflow checked out (pull_request events check out a merge ref).
           # The API call is retried: a single transient/empty response used to
           # get swallowed by `2>/dev/null || true`, silently blanking the notes.
+          # First line of each commit message only — enough for the "(#N)" /
+          # "Merge pull request #N" detection below, and lets the no-PR
+          # fallback group raw subjects by conventional-commit prefix.
           fetch_subjects() {
             if [ -n "$PREV" ]; then
-              gh api "repos/$REPO/compare/$PREV...main" --jq '.commits[].commit.message'
+              gh api "repos/$REPO/compare/$PREV...main" --jq '.commits[].commit.message | split("\n")[0]'
             else
-              gh api "repos/$REPO/commits?sha=main&per_page=100" --jq '.[].commit.message'
+              gh api "repos/$REPO/commits?sha=main&per_page=100" --jq '.[].commit.message | split("\n")[0]'
             fi
           }
           subjects=""
@@ -132,6 +135,25 @@ jobs:
               *)                               others="${others}${line}" ;;
             esac
           done
+
+          # Fallback for merge methods that leave no PR reference in the
+          # subjects (e.g. "Rebase and merge").  Group the raw commit subjects
+          # by their conventional-commit prefix so the notes are never blank
+          # when there are real commits.  Skips merge/chore/skip-ci noise.
+          if [ -z "$feats$fixes$others" ]; then
+            while IFS= read -r subj; do
+              [ -z "$subj" ] && continue
+              case "$subj" in
+                Merge\ *|chore:*|chore\(*|*"[skip ci]"*) continue ;;
+              esac
+              line="- $(strip "$subj")"$'\n'
+              case "$subj" in
+                feat:*|feat\(*) feats="${feats}${line}" ;;
+                fix:*|fix\(*)   fixes="${fixes}${line}" ;;
+                *)              others="${others}${line}" ;;
+              esac
+            done <<< "$subjects"
+          fi
 
           {
             echo "## 🎹 Biasno ${TARGET}"

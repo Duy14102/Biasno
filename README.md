@@ -72,6 +72,7 @@ That launches the Electron app with live reload. For day-to-day development you 
 - The `package` step kills any running `Biasno.exe` / `app-builder.exe` first and retries on `EBUSY` — handling the "Access is denied" failure when a previous run left a file locked.
 - It pre-extracts electron-builder's `winCodeSign` cache via `scripts/prepare-wincodesign.cjs`, so the build succeeds on Windows **without admin / Developer Mode** (the bundled `app-builder.exe` would otherwise abort on the macOS `.dylib` symlinks inside the archive).
 - The app icon lives at `resources/icon.ico` (Windows) and `resources/icon.png` (Linux + dev BrowserWindow). Regenerate both with `node scripts/generate-icon.cjs` — a small pure-Node PNG/ICO writer, no image dependencies.
+- **Lean package.** `node_modules` is excluded from the build (`!**/node_modules/**`) — electron-vite already bundles every runtime lib into the renderer, and main/preload import nothing external — and `scripts/after-pack.cjs` prunes Chromium's locale `.pak` files down to `en-US`. Together that's ~145 MB off the unpacked app (the rest is the fixed Electron/Chromium runtime).
 
 </details>
 

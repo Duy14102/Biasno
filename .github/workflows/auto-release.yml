@@ -72,6 +72,32 @@ jobs:
           echo "new_tag=$new_tag"  >> "$GITHUB_OUTPUT"
           echo "::notice::$latest -> $new_tag ($bump) from labels: ${LABELS:-none}"
 
+      # Keep package.json in step with the released tag.  The build syncs the
+      # version at build time too, but committing it back here stops the repo
+      # (and local/dev builds) drifting forever at the placeholder version.
+      # Best-effort: a protected-branch push failure must NOT block the release.
+      - name: Commit version bump to main
+        if: steps.bump.outputs.bump != 'none'
+        continue-on-error: true
+        env:
+          NEW_TAG: ${{ steps.bump.outputs.new_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${NEW_TAG#v}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git pull --ff-only origin main
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          if git diff --quiet; then
+            echo "package.json already at $VERSION"
+          else
+            # [skip ci] so this housekeeping push doesn't re-run checks.
+            git commit -am "chore: bump version to ${NEW_TAG} [skip ci]"
+            git push origin main
+          fi
+
   release:
     needs: version
     if: needs.version.outputs.bump != 'none'

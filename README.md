@@ -111,8 +111,8 @@ Every skill has per-hand variants. The mode dropdown switches mid-session with a
 
 ### Audio & input
 
-- Web Audio engine with a sample-based piano via `@tonejs/piano` and `soundfont-player`.
-- An animated splash gates the app until the soundfont finishes loading — you can't start a song before samples are ready.
+- Web Audio engine with a sample-based piano via `@tonejs/piano` and `soundfont-player`. The MusyngKite acoustic-grand soundfont ships **bundled in the app**, so first launch doesn't wait on a CDN download (CDN MusyngKite → FluidR3 → a synth stay as fallbacks).
+- The home page is interactive immediately while samples load in the background; only the playback pages (Practice / Free Mode) wait — behind a lightweight loading gate — so you still can't start a song before samples are ready.
 - 300 ms scheduling look-ahead so timing survives normal JS jitter.
 - MIDI keyboard input via the Web MIDI API, with auto-connect to remembered devices.
 - **Sustain pedal (CC64)** — a real piano's damper pedal is honoured everywhere: held notes keep ringing while the pedal is down and damp on release, in Practice play-along and Free-Mode recording alike. MIDI files that carry pedal play back with their real sustain. (See the [architecture note](#architecture-notes) for the model.)
@@ -264,14 +264,14 @@ CI cuts a release automatically when a PR is merged into `main`, with a **label-
 | `beta` (+ a bump label) | adds a `-beta.N` pre-release | `v0.2.0-beta.1` |
 | _(no bump label)_ | none — release skipped | — |
 
-The workflow builds the Windows portable, zips it as `Biasno-<tag>.zip`, and generates grouped release notes from the merged PRs' titles + labels. A **`beta`** label produces a `-beta.N` **pre-release** (orange tag, auto-incrementing per base version); a plain `vX.Y.Z` is a normal release, so the newest one always carries GitHub's green **Latest** badge.
+The workflow builds the Windows portable, zips it as `Biasno-<tag>.zip` (which extracts to a versioned `Biasno-<tag>/` folder), and generates grouped release notes from the merged PRs' titles + labels — falling back to the raw commit subjects so the body is never blank, whatever the merge method (squash / merge / rebase). The released version is also committed back to `package.json` on `main`, so the repo never drifts from the latest tag. A **`beta`** label produces a `-beta.N` **pre-release** (orange tag, auto-incrementing per base version); a plain `vX.Y.Z` is a normal release, so the newest one always carries GitHub's green **Latest** badge.
 
 ### Architecture notes
 
 <details>
 <summary><strong>Sheet preload</strong> — instant sheet open via off-screen render + LRU cache</summary>
 
-Opening the sheet inside practice used to block the main thread for 1–2 s while OSMD rendered. The pre-loader (`utils/sheetPreload.ts`) renders into a detached `<div>` in `document.body` the moment a file is picked, and an LRU cache (max 10) keeps the rendered SVG so toggling the sheet, navigating back, or switching files is instant. `SheetMusic` mounts by appending the cached container into its wrapper and detaches by moving it back to body, so React doesn't tear it down on unmount.
+Opening the sheet inside practice used to block the main thread for 1–2 s while OSMD rendered. The pre-loader (`utils/sheetPreload.ts`) renders into a detached `<div>` in `document.body` the moment a file is picked, and an LRU cache (max 10) keeps the rendered SVG so toggling the sheet, navigating back, or switching files is instant. `SheetMusic` mounts by appending the cached container into its wrapper and detaches by moving it back to body, so React doesn't tear it down on unmount. The render is scheduled **off** the import / drop / folder-scan path (during idle), so adding files never freezes the UI — a freshly added row is selectable immediately while its sheet warms up behind it.
 </details>
 
 <details>

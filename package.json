@@ -95,8 +95,10 @@
     },
     "files": [
       "out/**/*",
-      "resources/**/*"
+      "resources/**/*",
+      "!**/node_modules/**"
     ],
+    "afterPack": "scripts/after-pack.cjs",
     "extraResources": [
       {
         "from": "resources/",

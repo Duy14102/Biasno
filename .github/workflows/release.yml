@@ -78,12 +78,23 @@ jobs:
           # Collect commit subjects between the previous tag and the default
           # branch via GitHub's compare API — robust regardless of which ref the
           # workflow checked out (pull_request events check out a merge ref).
-          if [ -n "$PREV" ]; then
-            subjects=$(gh api "repos/$REPO/compare/$PREV...main" \
-              --jq '.commits[].commit.message' 2>/dev/null || true)
-          else
-            subjects=$(gh api "repos/$REPO/commits" --jq '.[].commit.message' 2>/dev/null || true)
-          fi
+          # The API call is retried: a single transient/empty response used to
+          # get swallowed by `2>/dev/null || true`, silently blanking the notes.
+          fetch_subjects() {
+            if [ -n "$PREV" ]; then
+              gh api "repos/$REPO/compare/$PREV...main" --jq '.commits[].commit.message'
+            else
+              gh api "repos/$REPO/commits?sha=main&per_page=100" --jq '.[].commit.message'
+            fi
+          }
+          subjects=""
+          for attempt in 1 2 3; do
+            if subjects=$(fetch_subjects 2>/tmp/api_err); then
+              if [ -n "$subjects" ]; then break; fi
+            fi
+            echo "::warning::release-notes: commit fetch attempt $attempt empty — $(tr '\n' ' ' < /tmp/api_err)"
+            sleep 5
+          done
 
           # PR numbers referenced by squash-merge "(#N)" or merge-commit subjects.
           nums=$(printf '%s' "$subjects" \
@@ -121,6 +132,12 @@ jobs:
               echo "**Full changelog:** https://github.com/${REPO}/compare/${PREV}...${TARGET}"
             fi
           } > release_notes.md
+
+          # Surface a silent-blank notes body in the run summary instead of
+          # shipping an empty release like v0.1.1 did.
+          if [ -z "$feats$fixes$others" ]; then
+            echo "::warning::release-notes: no PRs grouped into the body (subjects empty or unlabelled) — release notes will only show Install/changelog."
+          fi
 
           echo "---- release notes ----"; cat release_notes.md
 

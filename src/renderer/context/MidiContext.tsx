@@ -246,6 +246,10 @@ export function MidiProvider({ children }: { children: React.ReactNode }): React
         newIds.forEach(id => seenIdsRef.current.add(id))
 
         setLiveDevices(inputs)
+        // Keep the ref in sync SYNCHRONOUSLY so tryAutoConnect below reads the
+        // freshly-enumerated list — the [liveDevices] effect only updates
+        // liveRef after the next render, one refresh too late for auto-connect.
+        liveRef.current = inputs
 
         // Active device went offline → surface notice + clear connection.
         const activeId = connectedIdRef.current

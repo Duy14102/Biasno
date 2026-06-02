@@ -1,7 +1,7 @@
 {
   "name": "biasno",
   "productName": "Biasno",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Biasno - Learn piano with MIDI files (Synthesia-style)",
   "author": "Biasno",
   "main": "./out/main/index.js",

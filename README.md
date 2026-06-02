@@ -60,6 +60,8 @@ That launches the Electron app with live reload. For day-to-day development you 
 | `npm run typecheck` | `tsc --noEmit` for both the web and node configs. |
 | `npm run test` | Vitest unit tests (utils, practice, free-mode, audio). |
 | `npm run check` | typecheck + lint + test + build — fails fast on the first error. |
+| `npm run storybook` | Component workbench at `localhost:6006` (dev only). |
+| `npm run build-storybook` | Static Storybook into `./storybook-static`. |
 | `npm run package` | Windows portable build into `./release/win-unpacked`. |
 
 > Run `npm run check` before pushing — it's the same gate CI uses.
@@ -252,6 +254,15 @@ src/
 - The `@/` alias resolves to `src/renderer/` and is configured in `tsconfig.web.json`, `electron.vite.config.ts`, and `vitest.config.ts`.
 - Same-folder imports stay relative (`./xxx`) to avoid self-cycles through the barrel.
 - Co-located test files (`*.test.ts`) also use `./xxx` for the unit under test.
+
+### Storybook
+
+`npm run storybook` opens a component workbench (Storybook 9 + `@storybook/react-vite`). Config lives in `.storybook/`; stories are co-located as `*.stories.tsx` next to each component.
+
+- **Providers are global.** `.storybook/preview.tsx` wraps every story in the app's `LanguageProvider` / `ThemeProvider` / `MidiProvider`, so any component that calls `useLanguage` / `useTheme` / `useMidi` works in isolation. The toolbar theme toggle drives the real `ThemeContext` (so `html.dark` flips for real).
+- **Aliases, not the Electron config.** Storybook runs its own Vite (no obfuscator); `.storybook/main.ts` re-declares the `@` / `@renderer` aliases, and Tailwind/PostCSS are picked up from `postcss.config.js`.
+- Memo-wrapped components (e.g. `IconBtn`, `ModeDropdown`) surface a local `Props` type under `composite: true` — export the props interface or annotate `meta` explicitly so the story typechecks.
+- Stories aren't imported by `index.html`, so they're excluded from the Electron renderer bundle.
 
 ### Releases
 

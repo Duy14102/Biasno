@@ -19,6 +19,9 @@ interface Props {
   onMetronomeToggle: () => void
   measureLinesEnabled:  boolean
   onMeasureLinesToggle: () => void
+  midiConnected:        boolean
+  pianoOwnSound:        boolean
+  onPianoOwnSoundToggle: () => void
 }
 
 export default function FreeModeHeader({
@@ -27,6 +30,7 @@ export default function FreeModeHeader({
   countdownEnabled, onCountdownToggle,
   metronomeEnabled, onMetronomeToggle,
   measureLinesEnabled, onMeasureLinesToggle,
+  midiConnected, pianoOwnSound, onPianoOwnSoundToggle,
 }: Props): React.JSX.Element {
   const { t } = useLanguage()
   return (
@@ -76,6 +80,9 @@ export default function FreeModeHeader({
         onMetronomeToggle={onMetronomeToggle}
         measureLinesEnabled={measureLinesEnabled}
         onMeasureLinesToggle={onMeasureLinesToggle}
+        midiConnected={midiConnected}
+        pianoOwnSound={pianoOwnSound}
+        onPianoOwnSoundToggle={onPianoOwnSoundToggle}
       />
     </header>
   )

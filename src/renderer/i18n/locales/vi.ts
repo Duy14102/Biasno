@@ -133,6 +133,8 @@ export const vi = {
   noteSize:               'Kích cỡ note',
   measureLines:           'Đường nhịp',
   countdown321:           'Đếm ngược 3-2-1',
+  pianoOwnSound:          'Đàn piano tự phát âm thanh',
+  pianoOwnSoundHint:      'Không phát âm thanh của ứng dụng cho phím bạn bấm trên đàn đã kết nối',
 
   // ── Mode dropdown ───────────────────────────────────────────────────────
   practiceModeHeading:    'Chế độ luyện tập',

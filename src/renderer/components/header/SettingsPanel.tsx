@@ -4,7 +4,7 @@ import { DROPDOWN_CSS } from './modeGroups'
 import { useLanguage } from '@/i18n'
 import {
   GearIcon, VolMuteIcon, VolLowIcon, VolMedIcon, VolHighIcon,
-  ZoomIcon, MeasureIcon, CountdownIcon,
+  ZoomIcon, MeasureIcon, CountdownIcon, PianoIcon,
 } from './icons'
 
 function VolumeGlyph({ v }: { v: number }): React.JSX.Element {
@@ -78,11 +78,14 @@ interface Props {
   zoom:                 number
   measureLines:         boolean
   countdownEnabled:     boolean
+  midiConnected:        boolean
+  pianoOwnSound:        boolean
   onVolumeChange:       (v: number) => void
   onVolumeMute:         () => void
   onZoomChange:         (v: number) => void
   onMeasureLinesToggle: () => void
   onCountdownToggle:    () => void
+  onPianoOwnSoundToggle: () => void
 }
 
 // Local extras: a one-shot gear-spin on click and a slow idle wobble on hover.
@@ -100,8 +103,9 @@ const SETTINGS_GEAR_CSS = `
 `
 
 const SettingsPanel = React.memo(function SettingsPanel({
-  volume, zoom, measureLines, countdownEnabled,
+  volume, zoom, measureLines, countdownEnabled, midiConnected, pianoOwnSound,
   onVolumeChange, onVolumeMute, onZoomChange, onMeasureLinesToggle, onCountdownToggle,
+  onPianoOwnSoundToggle,
 }: Props) {
   const { t } = useLanguage()
   const [open, setOpen] = useState(false)
@@ -172,6 +176,17 @@ const SettingsPanel = React.memo(function SettingsPanel({
               onChange={v => onVolumeChange(v / 100)}
               suffix="%"
             />
+
+            {/* Only meaningful with a real piano attached — its own speakers
+                make the sound, so the app shouldn't double it. */}
+            {midiConnected && (
+              <SettingRow
+                icon={<span className="text-slate-600 dark:text-slate-300"><PianoIcon className="w-4 h-4" /></span>}
+                label={t('pianoOwnSound')}
+              >
+                <ToggleSwitch on={pianoOwnSound} onClick={onPianoOwnSoundToggle} />
+              </SettingRow>
+            )}
           </div>
 
           <div className="mx-4 border-t border-slate-200 dark:border-slate-700/50" />

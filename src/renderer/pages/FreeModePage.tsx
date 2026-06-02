@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAudioEngine } from '@/hooks'
+import { useAudioEngine, usePianoOwnSound } from '@/hooks'
 import { useLanguage } from '@/i18n'
 import { useMidi } from '@/context'
 import { audioEngine } from '@/audio'
@@ -107,7 +107,15 @@ export default function FreeModePage(): React.JSX.Element {
     setActiveId(null)
   }, [])
 
-  const freeMode = useFreeMode({ onAfterStop: handleAfterStop, onAfterClear: handleAfterClear })
+  // "My piano makes its own sound" — suppress re-synthesising device input
+  // (shared with Practice / Home via the persisted setting).
+  const { pianoOwnSound, togglePianoOwnSound, suppressDeviceAudio } = usePianoOwnSound()
+
+  const freeMode = useFreeMode({
+    onAfterStop: handleAfterStop,
+    onAfterClear: handleAfterClear,
+    suppressDeviceAudio,
+  })
   const {
     isRecording, snapshot, canUndo, canRedo,
     startRecord, continueRecord, stopRecord, clear, playInput,
@@ -423,6 +431,9 @@ export default function FreeModePage(): React.JSX.Element {
         onMetronomeToggle={handleMetronomeToggle}
         measureLinesEnabled={measureLinesEnabled}
         onMeasureLinesToggle={handleMeasureLinesToggle}
+        midiConnected={connectedId !== null}
+        pianoOwnSound={pianoOwnSound}
+        onPianoOwnSoundToggle={togglePianoOwnSound}
       />
 
       <RecorderPanel

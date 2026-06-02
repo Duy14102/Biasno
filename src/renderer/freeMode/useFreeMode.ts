@@ -19,6 +19,8 @@ interface Options {
   onAfterStop?:  (snap: FreeSnapshot, hadNotes: boolean, continued: boolean) => void
   // Fires when the working draft is wiped via clear().
   onAfterClear?: () => void
+  // Don't re-synthesise MIDI-device input — the real piano makes its own sound.
+  suppressDeviceAudio?: boolean
 }
 
 export interface FreeModeApi {
@@ -32,7 +34,7 @@ export interface FreeModeApi {
   continueRecord: () => void
   stopRecord:     () => void
   clear:          () => void
-  playInput:      (midi: number, velocity: number, on: boolean) => void
+  playInput:      (midi: number, velocity: number, on: boolean, fromDevice?: boolean) => void
 
   setTrimStart: (ms: number) => void
   setTrimEnd:   (ms: number) => void
@@ -85,7 +87,7 @@ function buildStopSnapshot(result: CaptureResult): FreeSnapshot {
 }
 
 export function useFreeMode(opts: Options = {}): FreeModeApi {
-  const { onAfterStop, onAfterClear } = opts
+  const { onAfterStop, onAfterClear, suppressDeviceAudio } = opts
 
   const editor = useEditor(EMPTY_SNAPSHOT)
   // Latest snapshot in a ref so the recorder's onStop / readSnapshot
@@ -102,6 +104,7 @@ export function useFreeMode(opts: Options = {}): FreeModeApi {
   const recorder = useRecorder({
     readSnapshot: () => snapshotRef.current,
     onStop:       handleStop,
+    suppressDeviceAudio,
   })
 
   const clear = useCallback(() => {

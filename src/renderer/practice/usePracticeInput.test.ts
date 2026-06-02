@@ -7,7 +7,7 @@ const audio = vi.hoisted(() => ({
   setSustainPedal: vi.fn(),
 }))
 const midi = vi.hoisted(() => ({
-  subscribe: vi.fn(() => () => {}),
+  subscribe: vi.fn<(cb: (m: number, v: number, on: boolean) => void) => () => void>(() => () => {}),
   subscribePedal: vi.fn<(cb: (d: boolean) => void) => () => void>(() => () => {}),
 }))
 vi.mock('@/audio', () => ({ audioEngine: audio }))
@@ -146,6 +146,38 @@ describe('usePracticeInput — key-up / release', () => {
     s.refs.holdingRef.current.set('gone', 60)   // id not in noteStates
     act(() => { s.result.current.handleNoteInput(60, 0, false) })
     expect(s.triggerFlash).not.toHaveBeenCalled()
+  })
+})
+
+describe('usePracticeInput — suppressDeviceAudio (real piano makes its own sound)', () => {
+  it('device input is NOT re-synthesised when suppressed, but state still updates', () => {
+    const s = setup([['a', st(note('a', 60, 5, 1), 'active')]], { suppressDeviceAudio: true })
+    act(() => { s.result.current.handleNoteInput(60, 0.9, true, true) })   // fromDevice
+    expect(audio.noteOn).not.toHaveBeenCalled()
+    // Visual / hold tracking still happen — only the audio is suppressed.
+    expect(s.refs.holdingRef.current.get('a')).toBe(60)
+    expect(s.setters.setActiveKeys).toHaveBeenCalled()
+    act(() => { s.result.current.handleNoteInput(60, 0, false, true) })
+    expect(audio.noteOff).not.toHaveBeenCalled()
+  })
+
+  it('device input still plays when suppression is off', () => {
+    const s = setup([['a', st(note('a', 60, 5, 1), 'active')]], { suppressDeviceAudio: false })
+    act(() => { s.result.current.handleNoteInput(60, 0.9, true, true) })
+    expect(audio.noteOn).toHaveBeenCalledWith(60, 0.9)
+  })
+
+  it('non-device input (computer keyboard / clicks) always plays, even when suppressed', () => {
+    const s = setup([['a', st(note('a', 60, 5, 1), 'active')]], { suppressDeviceAudio: true })
+    act(() => { s.result.current.handleNoteInput(60, 0.9, true) })   // no fromDevice flag
+    expect(audio.noteOn).toHaveBeenCalledWith(60, 0.9)
+  })
+
+  it('the MIDI subscription forwards input as fromDevice', () => {
+    setup([['a', st(note('a', 60, 5, 1), 'active')]], { suppressDeviceAudio: true })
+    const cb = midi.subscribe.mock.calls.at(-1)![0]
+    act(() => { cb(60, 0.9, true) })
+    expect(audio.noteOn).not.toHaveBeenCalled()   // suppressed because it's device input
   })
 })
 

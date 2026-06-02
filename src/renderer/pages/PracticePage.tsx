@@ -4,7 +4,7 @@ import { useAppContext, modePrefsKey } from '@/context'
 import { LS } from '@/constants'
 import { loadJSON, isPlainObject } from '@/utils'
 import { audioEngine }          from '@/audio'
-import { useAudioEngine }       from '@/hooks'
+import { useAudioEngine, usePianoOwnSound } from '@/hooks'
 import { useAudioScheduler }    from '@/practice'
 import { usePracticeInput }     from '@/practice'
 import { useViewSwap }          from '@/practice'
@@ -285,8 +285,16 @@ export default function PracticePage(): React.JSX.Element {
     setHintKeys((prev) => (prev.size ? new Set() : prev))
   }, [])
 
+  // "My piano makes its own sound" — when on AND a MIDI device is connected,
+  // suppress the app's synthesis of the notes the player plays so the real
+  // piano isn't doubled.  Shared hook keeps this consistent across every page
+  // that turns physical-piano input into audio.
+  const { connectedId, devices } = useMidi()
+  const { pianoOwnSound, togglePianoOwnSound, suppressDeviceAudio } = usePianoOwnSound()
+
   const { handleNoteInput } = usePracticeInput({
     isViewMode, needsMelody,
+    suppressDeviceAudio,
     isPlayingRef, currentTimeRef, noteStatesRef, holdingRef,
     setActiveKeys, setNoteStates, setIsPlaying, triggerFlash,
     onInput: handleInputBeat,
@@ -484,7 +492,6 @@ export default function PracticePage(): React.JSX.Element {
     const n = Number(raw)
     return (KEY_COUNTS as number[]).includes(n) ? (n as KeyCount) : 88
   })
-  const { connectedId, devices } = useMidi()
   const connectedDeviceName = useMemo(
     () => (connectedId ? devices.find(d => d.id === connectedId)?.name ?? null : null),
     [connectedId, devices],
@@ -596,6 +603,8 @@ export default function PracticePage(): React.JSX.Element {
         measureLines={measureLines}
         keyCount={keyCount}
         keyCountLocked={keyCountLocked}
+        midiConnected={connectedId !== null}
+        pianoOwnSound={pianoOwnSound}
         challengeEnabled={isViewMode ? undefined : challengeEnabled}
         scoreVersion={scoreVersion}
         onBack={handleBack}
@@ -613,6 +622,7 @@ export default function PracticePage(): React.JSX.Element {
         onVolumeMute={handleVolumeMute}
         onZoomChange={handleZoomChange}
         onMeasureLinesToggle={handleMeasureLinesToggle}
+        onPianoOwnSoundToggle={togglePianoOwnSound}
         onModeChange={handleModeChange}
         onKeyCountChange={handleKeyCountChange}
         onChallengeToggle={isViewMode ? undefined : () => setChallengeEnabled(!challengeEnabled)}

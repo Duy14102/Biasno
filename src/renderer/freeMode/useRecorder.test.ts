@@ -29,9 +29,9 @@ afterEach(() => vi.restoreAllMocks())
 
 const emptySnap: FreeSnapshot = { notes: [], durationMs: 0, trimStartMs: 0, trimEndMs: 0, clips: [] }
 
-function setup(readSnapshot: () => FreeSnapshot = () => emptySnap) {
+function setup(readSnapshot: () => FreeSnapshot = () => emptySnap, suppressDeviceAudio = false) {
   const onStop = vi.fn<(r: CaptureResult) => void>()
-  const { result } = renderHook(() => useRecorder({ readSnapshot, onStop }))
+  const { result } = renderHook(() => useRecorder({ readSnapshot, onStop, suppressDeviceAudio }))
   return { result, onStop }
 }
 
@@ -123,6 +123,23 @@ describe('useRecorder', () => {
     act(() => result.current.startRecord())
     act(() => result.current.stopRecord())
     expect(onStop.mock.calls[0][0].notes).toHaveLength(0)
+  })
+
+  it('suppresses device audio but still captures the note', () => {
+    const { result, onStop } = setup(() => emptySnap, true)
+    act(() => result.current.startRecord())
+    now = 100; act(() => midi.noteCb?.(60, 0.8, true))   // device input → fromDevice
+    now = 300; act(() => midi.noteCb?.(60, 0, false))
+    now = 400; act(() => result.current.stopRecord())
+    expect(engine.noteOn).not.toHaveBeenCalled()
+    expect(engine.noteOff).not.toHaveBeenCalled()
+    expect(onStop.mock.calls[0][0].notes[0]).toMatchObject({ midi: 60, startMs: 100, endMs: 300 })
+  })
+
+  it('still plays computer-keyboard / on-screen input even when device audio is suppressed', () => {
+    const { result } = setup(() => emptySnap, true)
+    act(() => result.current.playInput(60, 0.8, true))   // no fromDevice flag
+    expect(engine.noteOn).toHaveBeenCalledWith(60, 0.8)
   })
 
   it('forwards pedal edges to the engine and captures them while recording', () => {

@@ -8,7 +8,7 @@
 // Hold semantics: long notes must be held until ~95 % of their duration to
 // count.  Releasing early reverts the note's visual state to 'active' so
 // the player can re-attempt.
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { Hand } from '@/types'
 import { audioEngine } from '@/audio'
 import { useMidi } from '@/context'
@@ -18,6 +18,12 @@ import { TIMING_WINDOW_MS } from './constants'
 interface Args {
   isViewMode:    boolean
   needsMelody:   boolean
+  // When true, notes arriving from the connected MIDI device are NOT
+  // re-synthesised by the app — the real piano already makes its own sound,
+  // so synthesising would double it.  Only affects MIDI-device input; the
+  // computer keyboard and on-screen clicks always get app audio (they have no
+  // other sound source).
+  suppressDeviceAudio?: boolean
   isPlayingRef:  React.MutableRefObject<boolean>
   currentTimeRef: React.MutableRefObject<number>
   noteStatesRef: React.MutableRefObject<Map<string, NoteState>>
@@ -40,13 +46,21 @@ interface Args {
 }
 
 export function usePracticeInput({
-  isViewMode, needsMelody,
+  isViewMode, needsMelody, suppressDeviceAudio,
   isPlayingRef, currentTimeRef, noteStatesRef, holdingRef,
   setActiveKeys, setNoteStates, setIsPlaying, triggerFlash,
   onInput, onWrongPress,
-}: Args): { handleNoteInput: (midi: number, velocity: number, on: boolean) => void } {
-  const handleNoteInput = useCallback((midi: number, velocity: number, on: boolean) => {
+}: Args): { handleNoteInput: (midi: number, velocity: number, on: boolean, fromDevice?: boolean) => void } {
+  // Mirror the flag in a ref so toggling it doesn't re-create handleNoteInput
+  // and force a MIDI re-subscribe.
+  const suppressRef = useRef(suppressDeviceAudio)
+  useEffect(() => { suppressRef.current = suppressDeviceAudio }, [suppressDeviceAudio])
+
+  const handleNoteInput = useCallback((midi: number, velocity: number, on: boolean, fromDevice = false) => {
     if (isViewMode) return   // view-listen blocks all input
+
+    // Real piano makes its own sound → don't layer the app's synth on top.
+    const playAudio = !(fromDevice && suppressRef.current)
 
     if (on) {
       onInput?.()
@@ -75,7 +89,7 @@ export function usePracticeInput({
 
       if (bestMatch) {
         const m = bestMatch as NoteState
-        audioEngine.noteOn(midi, velocity)
+        if (playAudio) audioEngine.noteOn(midi, velocity)
         setActiveKeys((prev) => {
           const next = new Map(prev)
           next.set(midi, { hand: m.note.hand, hitState: 'correct', time: pressTime })
@@ -90,7 +104,7 @@ export function usePracticeInput({
         setNoteStates(next)
       } else {
         // Wrong key — quiet velocity so global volume isn't shouted at.
-        audioEngine.noteOn(midi, velocity * 0.25)
+        if (playAudio) audioEngine.noteOn(midi, velocity * 0.25)
         setActiveKeys((prev) => {
           const next = new Map(prev)
           next.set(midi, { hand: 'unknown', hitState: 'wrong', time: pressTime })
@@ -109,7 +123,7 @@ export function usePracticeInput({
         onWrongPress?.(now, nearest ? (nearest as NoteState).note : null)
       }
     } else {
-      audioEngine.noteOff(midi)
+      if (playAudio) audioEngine.noteOff(midi)
       setActiveKeys((prev) => {
         const next = new Map(prev)
         next.delete(midi)
@@ -144,7 +158,10 @@ export function usePracticeInput({
   // transparent here — auto-connect attaches the new device to the dispatcher
   // and our subscriber keeps receiving notes without re-mounting.
   const { subscribe, subscribePedal } = useMidi()
-  useEffect(() => subscribe(handleNoteInput), [subscribe, handleNoteInput])
+  useEffect(
+    () => subscribe((midi, velocity, on) => handleNoteInput(midi, velocity, on, true)),
+    [subscribe, handleNoteInput],
+  )
 
   // Real piano's sustain pedal → live damper.  Held notes keep ringing while
   // the pedal is down (view-listen has no live notes, so this is a no-op there).

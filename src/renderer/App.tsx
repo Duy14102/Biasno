@@ -1,7 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppProvider, MidiProvider, ThemeProvider } from '@/context'
 import { LanguageProvider } from '@/i18n'
-import { AudioGate, MidiDisconnectToast } from '@/components'
+import { AudioGate, RequireAudio, MidiDisconnectToast } from '@/components'
 import { HomePage, ModePage, PracticePage, FreeModePage } from '@/pages'
 
 // Opt into React Router v7 defaults now so the eventual major bump is silent.
@@ -21,8 +21,8 @@ export default function App(): React.JSX.Element {
                 <Routes>
                   <Route path="/"         element={<HomePage />} />
                   <Route path="/mode"     element={<ModePage />} />
-                  <Route path="/practice" element={<PracticePage />} />
-                  <Route path="/free"     element={<FreeModePage />} />
+                  <Route path="/practice" element={<RequireAudio><PracticePage /></RequireAudio>} />
+                  <Route path="/free"     element={<RequireAudio><FreeModePage /></RequireAudio>} />
                   <Route path="*"         element={<Navigate to="/" replace />} />
                 </Routes>
               </HashRouter>

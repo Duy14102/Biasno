@@ -37,7 +37,7 @@ describe('preload contextBridge wiring', () => {
     expect(exposeInMainWorld.mock.calls[0][0]).toBe('electronAPI')
     expect(Object.keys(api).sort()).toEqual(
       [
-        'getDataPath', 'getPathForFile', 'onFolderChanged', 'openFolder',
+        'getDataPath', 'getPathForFile', 'getSoundfont', 'onFolderChanged', 'openFolder',
         'openMidiFile', 'readMidiFile', 'saveBuffer', 'savePdfFromHtml',
         'saveText', 'scanMidiFolder', 'unwatchFolder', 'watchFolder',
       ].sort(),

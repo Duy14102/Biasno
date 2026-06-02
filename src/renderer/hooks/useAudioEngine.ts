@@ -4,8 +4,8 @@ import { audioEngine } from '@/audio'
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 
 export function useAudioEngine() {
-  const [loadState,       setLoadState]       = useState<LoadState>('idle')
-  const [audioSourceLabel, setAudioSourceLabel] = useState('⌛ Đang tải...')
+  const [loadState,       setLoadState]       = useState<LoadState>(audioEngine.ready ? 'ready' : 'idle')
+  const [audioSourceLabel, setAudioSourceLabel] = useState(audioEngine.ready ? audioEngine.audioSourceLabel : '⌛ Đang tải...')
 
   useEffect(() => {
     if (audioEngine.ready) {

@@ -54,13 +54,13 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Rename win-unpacked to Biasno
+      - name: Rename win-unpacked to versioned folder
         shell: pwsh
-        run: Rename-Item -Path release/win-unpacked -NewName Biasno
+        run: Rename-Item -Path release/win-unpacked -NewName Biasno-${{ steps.ver.outputs.tag }}
 
-      - name: Zip Biasno folder
+      - name: Zip versioned folder
         shell: pwsh
-        run: Compress-Archive -Path release/Biasno -DestinationPath release/Biasno-${{ steps.ver.outputs.tag }}.zip
+        run: Compress-Archive -Path release/Biasno-${{ steps.ver.outputs.tag }} -DestinationPath release/Biasno-${{ steps.ver.outputs.tag }}.zip
 
       - name: Generate release notes
         id: notes
@@ -80,11 +80,14 @@ jobs:
           # workflow checked out (pull_request events check out a merge ref).
           # The API call is retried: a single transient/empty response used to
           # get swallowed by `2>/dev/null || true`, silently blanking the notes.
+          # First line of each commit message only — enough for the "(#N)" /
+          # "Merge pull request #N" detection below, and lets the no-PR
+          # fallback group raw subjects by conventional-commit prefix.
           fetch_subjects() {
             if [ -n "$PREV" ]; then
-              gh api "repos/$REPO/compare/$PREV...main" --jq '.commits[].commit.message'
+              gh api "repos/$REPO/compare/$PREV...main" --jq '.commits[].commit.message | split("\n")[0]'
             else
-              gh api "repos/$REPO/commits?sha=main&per_page=100" --jq '.[].commit.message'
+              gh api "repos/$REPO/commits?sha=main&per_page=100" --jq '.[].commit.message | split("\n")[0]'
             fi
           }
           subjects=""
@@ -104,9 +107,24 @@ jobs:
           # Strip a leading conventional-commit prefix (feat:, fix(scope)!:, …).
           strip() { printf '%s' "$1" | sed -E 's/^[a-z]+(\([^)]*\))?!?:[[:space:]]*//'; }
 
+          # Right after a squash merge, `gh pr view N` for the just-merged PR
+          # can briefly return nothing.  The compare fetch above is retried but
+          # this call was not — so a single-PR release (e.g. v0.1.2, whose only
+          # PR was the notes fix itself) still blanked out.  Retry here too.
+          pr_view() {
+            local n="$1" out=""
+            for attempt in 1 2 3; do
+              out=$(gh pr view "$n" --repo "$REPO" --json title,labels 2>/dev/null || true)
+              if [ -n "$out" ]; then printf '%s' "$out"; return 0; fi
+              echo "::warning::release-notes: gh pr view #$n empty — attempt $attempt" >&2
+              sleep 5
+            done
+            return 0
+          }
+
           feats=""; fixes=""; others=""
           for n in $nums; do
-            json=$(gh pr view "$n" --repo "$REPO" --json title,labels 2>/dev/null || true)
+            json=$(pr_view "$n")
             [ -z "$json" ] && continue
             title=$(printf '%s' "$json" | jq -r '.title')
             labels=$(printf '%s' "$json" | jq -r '[.labels[].name] | join(" ")')
@@ -118,6 +136,25 @@ jobs:
             esac
           done
 
+          # Fallback for merge methods that leave no PR reference in the
+          # subjects (e.g. "Rebase and merge").  Group the raw commit subjects
+          # by their conventional-commit prefix so the notes are never blank
+          # when there are real commits.  Skips merge/chore/skip-ci noise.
+          if [ -z "$feats$fixes$others" ]; then
+            while IFS= read -r subj; do
+              [ -z "$subj" ] && continue
+              case "$subj" in
+                Merge\ *|chore:*|chore\(*|*"[skip ci]"*) continue ;;
+              esac
+              line="- $(strip "$subj")"$'\n'
+              case "$subj" in
+                feat:*|feat\(*) feats="${feats}${line}" ;;
+                fix:*|fix\(*)   fixes="${fixes}${line}" ;;
+                *)              others="${others}${line}" ;;
+              esac
+            done <<< "$subjects"
+          fi
+
           {
             echo "## 🎹 Biasno ${TARGET}"
             echo
@@ -126,7 +163,7 @@ jobs:
             [ -n "$others" ] && { echo "### 🔧 Other";       echo; printf '%s' "$others"; echo; }
             echo "### 📦 Install"
             echo
-            echo "Download **\`Biasno-${TARGET}.zip\`** below, extract it, and run \`Biasno/Biasno.exe\` — Windows portable, no installer."
+            echo "Download **\`Biasno-${TARGET}.zip\`** below, extract it, and run \`Biasno-${TARGET}/Biasno.exe\` — Windows portable, no installer."
             if [ -n "$PREV" ]; then
               echo
               echo "**Full changelog:** https://github.com/${REPO}/compare/${PREV}...${TARGET}"

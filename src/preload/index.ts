@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App data path (for audio sample cache)
   getDataPath: (): Promise<string> => ipcRenderer.invoke('app:getDataPath'),
 
+  // Bundled piano soundfont as MIDI.js text (null if the asset is missing)
+  getSoundfont: (): Promise<string | null> => ipcRenderer.invoke('audio:getSoundfont'),
+
   // Resolve a dropped File's absolute filesystem path.  Electron 32+ removed
   // the legacy `file.path` field; webUtils.getPathForFile is the replacement.
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
@@ -58,6 +61,7 @@ declare global {
       scanMidiFolder: (folderPath: string) => Promise<MidiFileRef[] | null>
       readMidiFile: (filePath: string) => Promise<ArrayBuffer | null>
       getDataPath: () => Promise<string>
+      getSoundfont: () => Promise<string | null>
       getPathForFile: (file: File) => string
       watchFolder: (folderPath: string) => Promise<void>
       unwatchFolder: () => Promise<void>

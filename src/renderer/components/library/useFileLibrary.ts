@@ -14,6 +14,24 @@ import { parseMidiBuffer } from '@/utils'
 import { preloadSheet, hasCachedSheetByName, evictSheetByName } from '@/components/sheet'
 import { useAppContext, type FileEntry } from '@/context'
 import { useLanguage } from '@/i18n'
+import type { MidiFileData } from '@/types'
+
+// preloadSheet runs osmd.render() — a synchronous ~1–2 s main-thread block.
+// Awaiting it while merely adding a file to the library froze the whole UI
+// (spinner, clicks, paint) until the render finished, so a freshly imported
+// file appeared to "lag" before it could be selected.  Kick the render off in
+// the background instead: the row is usable the instant it's parsed, and the
+// off-screen sheet warms up during an idle frame behind it.  preloadSheet
+// dedupes by (name, bpm), so a later selectFile() awaits the same in-flight
+// render rather than starting a second one.
+function schedulePreload(data: MidiFileData): void {
+  const run = () => { void preloadSheet(data) }
+  const ric = (window as unknown as {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+  }).requestIdleCallback
+  if (ric) ric(run, { timeout: 2000 })
+  else setTimeout(run, 0)
+}
 
 export interface FolderConflict {
   folder:    string
@@ -135,7 +153,7 @@ export function useFileLibrary(): UseFileLibrary {
       updateFileList((prev) => prev.map((f) =>
         f.path === result.path ? { ...f, duration: data.duration } : f
       ))
-      await preloadSheet(data)
+      schedulePreload(data)
     } catch (e) {
       setError(t('errCantReadFile', { msg: e instanceof Error ? e.message : '' }))
       updateFileList((prev) => prev.filter((f) => f.path !== result.path))
@@ -252,7 +270,7 @@ export function useFileLibrary(): UseFileLibrary {
         updateFileList((list) => list.map((f) =>
           f.path === r.path ? { ...f, duration: data.duration } : f
         ))
-        await preloadSheet(data)
+        schedulePreload(data)
       } catch (err) {
         console.warn('[folder sync]', r.path, err)
       } finally {
@@ -411,8 +429,9 @@ export function useFileLibrary(): UseFileLibrary {
 
     const failed: string[] = []
 
-    // Parse → fill duration → preload sheet → clear spinner.  ALL files get
-    // pre-rendered so clicking any of them later navigates instantly.
+    // Parse → fill duration → clear spinner → background-preload the sheet.
+    // The render is scheduled off the critical path so every dropped row is
+    // selectable immediately; the off-screen sheets warm up during idle.
     for (const item of queued) {
       try {
         const buf  = await item.file.arrayBuffer()
@@ -425,7 +444,7 @@ export function useFileLibrary(): UseFileLibrary {
         updateFileList((prev) => prev.map((f) =>
           f.path === item.path ? { ...f, duration: data.duration } : f
         ))
-        await preloadSheet(data)
+        schedulePreload(data)
       } catch (err) {
         failed.push(item.file.name)
         updateFileList((prev) => prev.filter((f) => f.path !== item.path))

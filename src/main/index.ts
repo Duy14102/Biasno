@@ -203,6 +203,19 @@ ipcMain.handle('app:getDataPath', () => {
   return p
 })
 
+// ─── IPC: Bundled piano soundfont (MIDI.js text) ─────────────────────────────
+// Read off disk and returned as text so the renderer can decode it without a
+// CDN round-trip on first launch.  In dev the renderer is served by Vite (the
+// file lives under src/renderer/public); packaged it ships in out/renderer.
+ipcMain.handle('audio:getSoundfont', () => {
+  const rel = 'soundfonts/acoustic_grand_piano-mp3.js'
+  const p = isDev
+    ? join(app.getAppPath(), 'src/renderer/public', rel)
+    : join(__dirname, '../renderer', rel)
+  try { return readFileSync(p, 'utf8') }
+  catch (e) { console.warn('[soundfont] read failed:', p, e); return null }
+})
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null)  // Remove File/Help/Edit menu bar
   createWindow()

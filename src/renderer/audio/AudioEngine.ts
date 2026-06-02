@@ -51,27 +51,60 @@ export class AudioEngine {
     this.gainNode.gain.value = this._volume
     this.gainNode.connect(this.ac.destination)
 
-    if (await this._tryLoad('MusyngKite')) return this.source
-    if (await this._tryLoad('FluidR3_GM'))  return this.source
+    // Prefer the soundfont bundled with the app (renderer/public/soundfonts) so
+    // first launch on a fresh machine isn't gated on a cold-network CDN fetch.
+    // It's read via IPC and handed to soundfont-player as a decoded
+    // note→sample object: the URL path needs a real `.js` endpoint that a
+    // packaged file:// can't satisfy (Electron's file:// XHR reports status 0,
+    // which the loader treats as a failure).  CDN MusyngKite / FluidR3 stay as
+    // fallbacks if the bundled asset is missing.
+    const local = await this._loadLocalSoundfont()
+    if (local && await this._tryLoad(local, 'MusyngKite')) return this.source
+    if (await this._tryLoad('acoustic_grand_piano', 'MusyngKite')) return this.source
+    if (await this._tryLoad('acoustic_grand_piano', 'FluidR3_GM')) return this.source
 
     this._createSynth()
     return this.source
   }
 
-  private async _tryLoad(sf: string): Promise<boolean> {
+  // Read the bundled soundfont via IPC and parse its MIDI.js wrapper into the
+  // `{ noteName: dataUri }` map soundfont-player decodes.  Mirrors the
+  // library's own `midiJsToJson`.  Returns null (→ CDN fallback) if the asset
+  // is absent or unparsable.
+  private async _loadLocalSoundfont(): Promise<Record<string, string> | null> {
+    try {
+      const text = await window.electronAPI.getSoundfont()
+      if (!text) return null
+      const begin = text.indexOf('=', text.indexOf('MIDI.Soundfont.')) + 2
+      const end   = text.lastIndexOf(',')
+      return JSON.parse(text.slice(begin, end) + '}')
+    } catch (e) {
+      console.warn('[Audio] local soundfont parse failed:', e)
+      return null
+    }
+  }
+
+  private async _tryLoad(
+    nameOrData: string | Record<string, string>,
+    sf: string,
+  ): Promise<boolean> {
+    const local = typeof nameOrData !== 'string'
     try {
       this.player = await Promise.race<Awaited<ReturnType<typeof loadInstrument>>>([
-        loadInstrument(this.ac!, 'acoustic_grand_piano', {
+        loadInstrument(this.ac!, nameOrData as unknown as Parameters<typeof loadInstrument>[1], {
           soundfont: sf,
           destination: this.gainNode!,
           gain: 5,
-          format: 'mp3'
+          format: 'mp3',
+          // Pre-decoded object — tell soundfont-player to use it verbatim
+          // instead of building a CDN URL from the (object) "name".
+          ...(local ? { isSoundfontURL: () => true } : {}),
         }),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 18_000))
       ])
-      this.source  = sf === 'MusyngKite' ? 'MusyngKite' : 'FluidR3'
+      this.source  = sf === 'FluidR3_GM' ? 'FluidR3' : 'MusyngKite'
       this.isReady = true
-      console.log(`[Audio] ${sf} loaded`)
+      console.log(`[Audio] ${local ? 'local ' : ''}${sf} loaded`)
       return true
     } catch (e) {
       console.warn(`[Audio] ${sf} failed:`, e)

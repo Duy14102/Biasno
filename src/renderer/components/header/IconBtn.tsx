@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-interface IconBtnProps {
+export interface IconBtnProps {
   onClick:  () => void
   title:    string
   active?:  boolean

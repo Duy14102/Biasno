@@ -29,7 +29,7 @@ export interface RecorderApi {
   startRecord:    () => void
   continueRecord: () => void
   stopRecord:     () => void
-  playInput:      (midi: number, velocity: number, on: boolean) => void
+  playInput:      (midi: number, velocity: number, on: boolean, fromDevice?: boolean) => void
 }
 
 interface Options {
@@ -38,13 +38,21 @@ interface Options {
   // problem when the user holds Continue while editing.
   readSnapshot: () => FreeSnapshot
   onStop:       (result: CaptureResult) => void
+  // When true, notes from the connected MIDI device are captured but NOT
+  // re-synthesised — the real piano already makes its own sound.
+  suppressDeviceAudio?: boolean
 }
 
-export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
+export function useRecorder({ readSnapshot, onStop, suppressDeviceAudio }: Options): RecorderApi {
   const [isRecording, setIsRecording] = useState(false)
 
   const isRecordingRef = useRef(false)
   useEffect(() => { isRecordingRef.current = isRecording }, [isRecording])
+
+  // Ref-mirror so toggling the setting doesn't re-bind playInput (which would
+  // force a MIDI re-subscribe).
+  const suppressRef = useRef(suppressDeviceAudio)
+  useEffect(() => { suppressRef.current = suppressDeviceAudio }, [suppressDeviceAudio])
 
   const recStartRef   = useRef(0)
   const idRef         = useRef(0)
@@ -114,9 +122,13 @@ export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
   }, [onStop])
 
   // ── input ─────────────────────────────────────────────────────────────
-  const playInput = useCallback((midi: number, velocity: number, on: boolean) => {
-    if (on) audioEngine.noteOn(midi, velocity)
-    else    audioEngine.noteOff(midi)
+  const playInput = useCallback((midi: number, velocity: number, on: boolean, fromDevice = false) => {
+    // Real piano makes its own sound → capture the note but don't layer the
+    // app's synth on top.  Only device input is gated; keyboard / clicks play.
+    if (!(fromDevice && suppressRef.current)) {
+      if (on) audioEngine.noteOn(midi, velocity)
+      else    audioEngine.noteOff(midi)
+    }
 
     if (!isRecordingRef.current) return
     const t = performance.now() - recStartRef.current
@@ -151,7 +163,10 @@ export function useRecorder({ readSnapshot, onStop }: Options): RecorderApi {
   }, [])
 
   const { subscribe, subscribePedal } = useMidi()
-  useEffect(() => subscribe(playInput), [subscribe, playInput])
+  useEffect(
+    () => subscribe((midi, velocity, on) => playInput(midi, velocity, on, true)),
+    [subscribe, playInput],
+  )
   useEffect(() => subscribePedal(playPedal), [subscribePedal, playPedal])
 
   return { isRecording, startRecord, continueRecord, stopRecord, playInput }

@@ -26,7 +26,10 @@ vi.mock('@/audio', () => ({
     startMetronome: vi.fn(), updateMetronomeBpm: vi.fn(), stopFutureNodes: vi.fn(),
   },
 }))
-vi.mock('@/hooks', () => ({ useAudioEngine: () => ({}) }))
+vi.mock('@/hooks', () => ({
+  useAudioEngine: () => ({}),
+  usePianoOwnSound: () => ({ pianoOwnSound: false, togglePianoOwnSound: vi.fn(), suppressDeviceAudio: false }),
+}))
 vi.mock('@/i18n', () => ({ useLanguage: () => ({ t: (k: string) => k }), MODE_FLASH_KEYS: {} }))
 vi.mock('@/practice', () => ({
   useFlashTimer: () => ({ triggerFlash: vi.fn() }),

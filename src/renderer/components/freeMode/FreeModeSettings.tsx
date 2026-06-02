@@ -3,7 +3,7 @@ import { useLanguage } from '@/i18n'
 import { KEY_COUNTS, type KeyCount } from '@/utils'
 import {
   GearIcon, KeyboardIcon, MetronomeIcon, MeasureIcon, CountdownIcon, LockIcon,
-  ToggleSwitch,
+  PianoIcon, ToggleSwitch,
 } from '@/components/header'
 
 const SETTINGS_STYLE = `
@@ -29,6 +29,9 @@ interface Props {
   onMetronomeToggle:  () => void
   measureLinesEnabled: boolean
   onMeasureLinesToggle: () => void
+  midiConnected:        boolean
+  pianoOwnSound:        boolean
+  onPianoOwnSoundToggle: () => void
 }
 
 export default function FreeModeSettings({
@@ -36,6 +39,7 @@ export default function FreeModeSettings({
   countdownEnabled, onCountdownToggle,
   metronomeEnabled, onMetronomeToggle,
   measureLinesEnabled, onMeasureLinesToggle,
+  midiConnected, pianoOwnSound, onPianoOwnSoundToggle,
 }: Props): React.JSX.Element {
   const { t } = useLanguage()
   const [open, setOpen] = useState(false)
@@ -161,6 +165,17 @@ export default function FreeModeSettings({
             on={measureLinesEnabled}
             onToggle={onMeasureLinesToggle}
           />
+
+          {/* My piano makes its own sound — only with a device attached. */}
+          {midiConnected && (
+            <SettingRow
+              icon={<PianoIcon className="w-4 h-4 text-slate-500 dark:text-slate-400" />}
+              label={t('pianoOwnSound')}
+              hint={t('pianoOwnSoundHint')}
+              on={pianoOwnSound}
+              onToggle={onPianoOwnSoundToggle}
+            />
+          )}
         </div>
       )}
     </div>

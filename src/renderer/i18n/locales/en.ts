@@ -126,6 +126,7 @@ export const en: Translations = {
   measureLines:           'Measure lines',
   countdown321:           '3-2-1 countdown',
   pianoOwnSound:          'My piano makes its own sound',
+  pianoOwnSoundHint:      "Don't play the app's sound for keys you press on the connected piano",
 
   practiceModeHeading:    'Practice mode',
 

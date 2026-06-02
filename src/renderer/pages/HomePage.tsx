@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '@/context'
 import { useMidi }        from '@/context'
+import { usePianoOwnSound } from '@/hooks'
 import { useFileLibrary } from '@/components/library'
 import { audioEngine }    from '@/audio'
 import { FileRow, LibrarySearch, VirtualFileList } from '@/components/library'
@@ -39,9 +40,14 @@ export default function HomePage(): React.JSX.Element {
 
   // Subscribe an audio-preview handler on the home page so pressing a key on
   // a connected MIDI keyboard plays the piano sample. The subscription is
-  // page-scoped — PracticePage replaces it with the matcher.
+  // page-scoped — PracticePage replaces it with the matcher.  When the user's
+  // piano makes its own sound, skip the preview so it isn't doubled.
   const { subscribe, globalError: midiError } = useMidi()
+  const { suppressDeviceAudio } = usePianoOwnSound()
+  const suppressRef = useRef(suppressDeviceAudio)
+  useEffect(() => { suppressRef.current = suppressDeviceAudio }, [suppressDeviceAudio])
   useEffect(() => subscribe((midi, vel, on) => {
+    if (suppressRef.current) return
     if (on) audioEngine.noteOn(midi, vel)
     else    audioEngine.noteOff(midi)
   }), [subscribe])

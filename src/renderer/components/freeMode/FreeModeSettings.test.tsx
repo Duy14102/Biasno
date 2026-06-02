@@ -10,7 +10,7 @@ vi.mock('@/components/header', () => {
   const Icon = (p: { className?: string }) => <span className={p.className} />
   return {
     GearIcon: Icon, KeyboardIcon: Icon, MetronomeIcon: Icon,
-    MeasureIcon: Icon, CountdownIcon: Icon, LockIcon: Icon,
+    MeasureIcon: Icon, CountdownIcon: Icon, LockIcon: Icon, PianoIcon: Icon,
     ToggleSwitch: ({ on, onClick }: { on: boolean; onClick: () => void }) => (
       <button data-toggle data-on={on} onClick={onClick} />
     ),
@@ -26,16 +26,18 @@ type P = React.ComponentProps<typeof FreeModeSettings>
 function setup(props: Partial<P> = {}) {
   const onKeyCountChange = vi.fn(), onCountdownToggle = vi.fn()
   const onMetronomeToggle = vi.fn(), onMeasureLinesToggle = vi.fn()
+  const onPianoOwnSoundToggle = vi.fn()
   const full: P = {
     keyCount: 88, keyCountLocked: false, onKeyCountChange,
     countdownEnabled: false, onCountdownToggle,
     metronomeEnabled: false, onMetronomeToggle,
     measureLinesEnabled: false, onMeasureLinesToggle,
+    midiConnected: false, pianoOwnSound: false, onPianoOwnSoundToggle,
     ...props,
   }
   const utils = render(<LanguageProvider><FreeModeSettings {...full} /></LanguageProvider>)
   const trigger = utils.container.querySelector('button') as HTMLButtonElement
-  return { onKeyCountChange, onCountdownToggle, onMetronomeToggle, onMeasureLinesToggle, trigger, ...utils }
+  return { onKeyCountChange, onCountdownToggle, onMetronomeToggle, onMeasureLinesToggle, onPianoOwnSoundToggle, trigger, ...utils }
 }
 
 describe('FreeModeSettings', () => {
@@ -106,6 +108,22 @@ describe('FreeModeSettings', () => {
     expect(onCountdownToggle).toHaveBeenCalledTimes(1)
     expect(onMetronomeToggle).toHaveBeenCalledTimes(1)
     expect(onMeasureLinesToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the piano-own-sound toggle with no device, shows + wires it when connected', () => {
+    const noDev = setup({ midiConnected: false })
+    fireEvent.click(noDev.trigger)
+    expect(noDev.queryByText('My piano makes its own sound')).toBeNull()
+    expect(noDev.container.querySelectorAll('[data-toggle]').length).toBe(3)
+    cleanup()
+
+    const dev = setup({ midiConnected: true, pianoOwnSound: true })
+    fireEvent.click(dev.trigger)
+    expect(dev.getByText('My piano makes its own sound')).toBeTruthy()
+    const toggles = dev.container.querySelectorAll('[data-toggle]')
+    expect(toggles.length).toBe(4)
+    fireEvent.click(toggles[3])
+    expect(dev.onPianoOwnSoundToggle).toHaveBeenCalledTimes(1)
   })
 
   it('adds the gear-spin class only after the first trigger', () => {

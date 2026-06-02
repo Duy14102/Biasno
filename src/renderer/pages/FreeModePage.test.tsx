@@ -10,7 +10,10 @@ vi.mock('@/audio', () => ({
     restoreVolume: vi.fn(),
   },
 }))
-vi.mock('@/hooks', () => ({ useAudioEngine: vi.fn() }))
+vi.mock('@/hooks', () => ({
+  useAudioEngine: vi.fn(),
+  usePianoOwnSound: () => ({ pianoOwnSound: false, togglePianoOwnSound: vi.fn(), suppressDeviceAudio: false }),
+}))
 // @/practice index transitively imports tone; only KEYBOARD_HEIGHT is used.
 vi.mock('@/practice', () => ({ KEYBOARD_HEIGHT: 120 }))
 vi.mock('@/context', () => ({ useMidi: () => ({ connectedId: null, devices: [] }) }))

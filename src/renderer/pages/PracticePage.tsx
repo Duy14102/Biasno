@@ -4,7 +4,7 @@ import { useAppContext, modePrefsKey } from '@/context'
 import { LS } from '@/constants'
 import { loadJSON, isPlainObject } from '@/utils'
 import { audioEngine }          from '@/audio'
-import { useAudioEngine }       from '@/hooks'
+import { useAudioEngine, usePianoOwnSound } from '@/hooks'
 import { useAudioScheduler }    from '@/practice'
 import { usePracticeInput }     from '@/practice'
 import { useViewSwap }          from '@/practice'
@@ -287,22 +287,14 @@ export default function PracticePage(): React.JSX.Element {
 
   // "My piano makes its own sound" — when on AND a MIDI device is connected,
   // suppress the app's synthesis of the notes the player plays so the real
-  // piano isn't doubled.  Persisted so the choice survives song/app restarts.
+  // piano isn't doubled.  Shared hook keeps this consistent across every page
+  // that turns physical-piano input into audio.
   const { connectedId, devices } = useMidi()
-  const [pianoOwnSound, setPianoOwnSound] = useState(
-    () => localStorage.getItem(LS.MIDI_OWN_SOUND) === 'true',
-  )
-  const handlePianoOwnSoundToggle = useCallback(() => {
-    setPianoOwnSound((prev) => {
-      const next = !prev
-      localStorage.setItem(LS.MIDI_OWN_SOUND, String(next))
-      return next
-    })
-  }, [])
+  const { pianoOwnSound, togglePianoOwnSound, suppressDeviceAudio } = usePianoOwnSound()
 
   const { handleNoteInput } = usePracticeInput({
     isViewMode, needsMelody,
-    suppressDeviceAudio: pianoOwnSound && connectedId !== null,
+    suppressDeviceAudio,
     isPlayingRef, currentTimeRef, noteStatesRef, holdingRef,
     setActiveKeys, setNoteStates, setIsPlaying, triggerFlash,
     onInput: handleInputBeat,
@@ -630,7 +622,7 @@ export default function PracticePage(): React.JSX.Element {
         onVolumeMute={handleVolumeMute}
         onZoomChange={handleZoomChange}
         onMeasureLinesToggle={handleMeasureLinesToggle}
-        onPianoOwnSoundToggle={handlePianoOwnSoundToggle}
+        onPianoOwnSoundToggle={togglePianoOwnSound}
         onModeChange={handleModeChange}
         onKeyCountChange={handleKeyCountChange}
         onChallengeToggle={isViewMode ? undefined : () => setChallengeEnabled(!challengeEnabled)}

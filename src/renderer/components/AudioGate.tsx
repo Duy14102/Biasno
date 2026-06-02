@@ -24,9 +24,9 @@ async function preloadPersistedSheets(): Promise<void> {
   }
 }
 
-// Gate the entire app behind audio sample loading + sheet preloading so the
-// home page is fully ready (no per-row loading bars) the moment the splash
-// unmounts.  Both run in parallel; the splash waits on the slower of the two.
+// Gate the app shell behind sheet preloading so the home page is fully ready
+// (no per-row loading bars) the moment the splash unmounts.  Audio samples
+// warm in the background and are gated separately at the playback routes.
 //
 // Cross-fade strategy: once preload finishes, children mount IMMEDIATELY but
 // the splash stays painted on top for one frame to let HomePage do its first
@@ -41,9 +41,11 @@ export function AudioGate({ children }: { children: React.ReactNode }) {
   const { t } = useLanguage()
 
   useEffect(() => {
-    const audio  = audioEngine.ready ? Promise.resolve() : audioEngine.initialize()
-    const sheets = preloadPersistedSheets()
-    Promise.allSettled([audio, sheets]).finally(() => setReady(true))
+    // Warm the piano samples in the background — the app shell no longer waits
+    // on the (first-run, cold-network) soundfont load.  The playback routes
+    // gate themselves via <RequireAudio>, so only starting a song waits on it.
+    if (!audioEngine.ready) void audioEngine.initialize()
+    preloadPersistedSheets().finally(() => setReady(true))
   }, [])
 
   // Drive the cross-fade once preload is done.  Two rAFs: the first lets

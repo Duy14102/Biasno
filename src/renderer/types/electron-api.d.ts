@@ -9,6 +9,7 @@ export interface ElectronAPI {
   scanMidiFolder:  (folderPath: string) => Promise<MidiFileRef[] | null>
   readMidiFile:    (filePath: string)   => Promise<ArrayBuffer | null>
   getDataPath:     () => Promise<string>
+  getSoundfont:    () => Promise<string | null>
   getPathForFile:  (file: File) => string
   watchFolder:     (folderPath: string) => Promise<void>
   unwatchFolder:   () => Promise<void>

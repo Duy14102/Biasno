@@ -69,7 +69,7 @@ describe('IPC wiring registered on import', () => {
   it('registers every expected channel exactly once', () => {
     expect([...h.handlers.keys()].sort()).toEqual(
       [
-        'app:getDataPath', 'dialog:openFolder', 'dialog:openMidi',
+        'app:getDataPath', 'audio:getSoundfont', 'dialog:openFolder', 'dialog:openMidi',
         'dialog:saveBuffer', 'dialog:savePdfFromHtml', 'dialog:saveText',
         'fs:readMidi', 'fs:scanMidi', 'fs:unwatchFolder', 'fs:watchFolder',
       ].sort(),

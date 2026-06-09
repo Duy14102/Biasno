@@ -35,16 +35,17 @@ jobs:
           ver="${latest#v}"
           A="${ver%%.*}"; rest="${ver#*.}"; B="${rest%%.*}"; C="${rest##*.}"
 
-          # Precedence: release > feature > bug. (feature + bug => feature)
+          # Precedence: release > feature > bug > chore. (feature + bug => feature)
           bump=""
           case " $LABELS " in
             *" release "*)                  bump="major" ;;
             *" feature "*|*" enhancement "*) bump="feature" ;;
             *" bug "*)                       bump="bug" ;;
+            *" chore "*)                     bump="chore" ;;
           esac
 
           if [ -z "$bump" ]; then
-            echo "No release-type label (bug / feature / release) on this PR — skipping release."
+            echo "No release-type label (bug / feature / release / chore) on this PR — skipping release."
             echo "bump=none" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -53,6 +54,7 @@ jobs:
             major)   A=$((A+1)); B=0; C=0 ;;   # official release; leaves beta (A>=1)
             feature) B=$((B+1)); C=0 ;;
             bug)     C=$((C+1)) ;;
+            chore)   C=$((C+1)) ;;
           esac
           base="v$A.$B.$C"
 

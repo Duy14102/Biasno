@@ -270,7 +270,7 @@ CI cuts a release automatically when a PR is merged into `main`, with a **label-
 
 | PR label | Bump | Example |
 |---|---|---|
-| `bug` | patch | `v0.1.0` → `v0.1.1` |
+| `bug` / `chore` | patch | `v0.1.0` → `v0.1.1` |
 | `feature` / `enhancement` | minor | `v0.1.0` → `v0.2.0` |
 | `release` | major | `v0.1.0` → `v1.0.0` |
 | `beta` (+ a bump label) | adds a `-beta.N` pre-release | `v0.2.0-beta.1` |

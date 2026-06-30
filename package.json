@@ -54,7 +54,6 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^17.6.0",
-    "javascript-obfuscator": "^5.4.3",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.41",
     "storybook": "^9.1.20",
@@ -62,7 +61,6 @@
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.59.4",
     "vite": "^7.1.12",
-    "vite-plugin-javascript-obfuscator": "^3.1.0",
     "vitest": "^4.1.7"
   },
   "overrides": {
